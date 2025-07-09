@@ -56,7 +56,9 @@ def run_complete_pipeline(
         bool: True if pipeline completed successfully, False otherwise
     """
     # Parse date if provided, otherwise use today
-    target_date = datetime.now().strftime("%Y-%m-%d") if not date else date
+    target_date = datetime.now() if not date else datetime.strptime(date, "%Y-%m-%d")
+    target_date_str = target_date.strftime("%Y%m%d")
+    display_date = target_date.strftime("%Y-%m-%d")
     
     try:
         # Run data download
@@ -68,16 +70,12 @@ def run_complete_pipeline(
             task = progress.add_task("Downloading ticker data...", total=None)
             
             try:
-                # Convert target_date to datetime for save_date parameter
-                save_date = datetime.strptime(target_date, "%Y-%m-%d")
-                
                 # Download data for all tickers
-                console.print(f"[bold blue]Downloading data for {target_date}...[/bold blue]")
+                console.print(f"[bold blue]Downloading data up to {display_date}...[/bold blue]")
                 download_results = download_all_tickers(
-                    end_date=save_date,  # Use save_date as end_date to get data up to this date
+                    end_date=target_date,  # Use target_date as end_date to get data up to this date
                     interval=interval,
-                    period=period,
-                    save_date=save_date
+                    period=period
                 )
                 
                 if not download_results:
@@ -97,7 +95,7 @@ def run_complete_pipeline(
                 console.print("\n[bold blue]Generating trading signals...[/bold blue]")
                 
                 signals_results = generate_all_ma_signals(
-                    date=target_date,
+                    date=target_date_str,  # Use the target date in YYYYMMDD format for file names
                     short_window=short_window,
                     long_window=long_window,
                     confidence_threshold=confidence_threshold,

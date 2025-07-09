@@ -10,13 +10,16 @@ All other files should use these functions to get paths.
 from pathlib import Path
 from typing import Optional
 
+# Get the project root directory (core/config/../../)
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+
 # Base directory for all data
-TICKERS_DIR = Path("tickers")
+TICKERS_DIR = PROJECT_ROOT / "tickers"
 
 # File path patterns - these are the only things you need to change
 # to modify the file structure
-TICKER_DATA_PATTERN = "{ticker}/data/date_{date}.csv"
-SIGNAL_FILE_PATTERN = "{ticker}/signals/signal_{date}.csv"
+TICKER_DATA_PATTERN = "{ticker}/data/{date}_{ticker}_data.csv"
+SIGNAL_FILE_PATTERN = "{ticker}/signals/{date}_{ticker}_signal.csv"
 
 def get_ticker_data_path(ticker: str, date: str) -> str:
     """
@@ -28,9 +31,11 @@ def get_ticker_data_path(ticker: str, date: str) -> str:
         
     Returns:
         String path to the ticker's data file
-        Format: "tickers/{ticker}/data/date_{date}.csv"
+        Format: "tickers/{ticker}/data/{date}_{ticker}_data.csv"
     """
-    return str(TICKERS_DIR / TICKER_DATA_PATTERN.format(ticker=ticker, date=date))
+    # Ensure the path is absolute and normalized
+    path = (TICKERS_DIR / TICKER_DATA_PATTERN.format(ticker=ticker, date=date)).resolve()
+    return str(path)
 
 def get_signal_file_path(ticker: str, date: str) -> str:
     """
@@ -42,6 +47,7 @@ def get_signal_file_path(ticker: str, date: str) -> str:
         
     Returns:
         String path to the signal file
-        Format: "tickers/{ticker}/signals/signal_{date}.csv"
+        Format: "tickers/{ticker}/signals/{date}_{ticker}_signal.csv"
     """
-    return str(TICKERS_DIR / SIGNAL_FILE_PATTERN.format(ticker=ticker, date=date))
+    path = (TICKERS_DIR / SIGNAL_FILE_PATTERN.format(ticker=ticker, date=date)).resolve()
+    return str(path)

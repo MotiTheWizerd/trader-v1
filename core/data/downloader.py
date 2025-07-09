@@ -148,11 +148,14 @@ def save_ticker_data(
     # Format the date as YYYYMMdd
     date_str = date.strftime("%Y%m%d")
     
-    # Get the file path from configuration
+    # Get the file path from configuration (this now returns an absolute path)
     file_path = get_ticker_data_path(ticker.upper(), date_str)
     
+    # Convert to Path object if it's not already
+    file_path = Path(file_path)
+    
     # Ensure the parent directory exists
-    Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
     
     # Save the data
     data.to_csv(file_path)
@@ -166,7 +169,6 @@ def download_and_save_ticker_data(
     end_date: Optional[Union[str, datetime]] = None,
     interval: str = DEFAULT_INTERVAL,
     period: Optional[str] = None,
-    save_date: Optional[datetime] = None,
 ) -> str:
     """
     Download and save ticker data in one operation.
@@ -177,30 +179,12 @@ def download_and_save_ticker_data(
         end_date (Optional[Union[str, datetime]]): End date for data download
         interval (str): Data interval (e.g., "1d", "1h", "5m")
         period (Optional[str]): Period to download
-        save_date (Optional[datetime]): Date to use for the file name, defaults to today
     
     Returns:
         str: Path to the saved file
     """
     data = download_ticker_data(ticker, start_date, end_date, interval, period)
-    
-    # Determine the appropriate date for the filename
-    if save_date is None:
-        if end_date is not None:
-            # Use end_date if provided
-            if isinstance(end_date, str):
-                save_date = pd.to_datetime(end_date).to_pydatetime()
-            else:
-                save_date = end_date
-        elif start_date is not None:
-            # Use start_date if end_date is not provided
-            if isinstance(start_date, str):
-                save_date = pd.to_datetime(start_date).to_pydatetime()
-            else:
-                save_date = start_date
-        # Otherwise, save_date will remain None and today's date will be used
-    
-    return save_ticker_data(ticker, data, save_date)
+    return save_ticker_data(ticker, data)
 
 
 def download_all_tickers(
@@ -208,7 +192,6 @@ def download_all_tickers(
     end_date: Optional[Union[str, datetime]] = None,
     interval: str = DEFAULT_INTERVAL,
     period: Optional[str] = None,
-    save_date: Optional[Union[str, datetime]] = None,
 ) -> Dict[str, str]:
     """
     Download data for all tickers in the tickers.json file.
@@ -218,7 +201,6 @@ def download_all_tickers(
         end_date (Optional[Union[str, datetime]]): End date for data download
         interval (str): Data interval (e.g., "1d", "1h", "5m")
         period (Optional[str]): Period to download
-        save_date (Optional[Union[str, datetime]]): Date to use for the file name, defaults to today
     
     Returns:
         Dict[str, str]: Dictionary mapping ticker symbols to their data file paths
@@ -226,19 +208,14 @@ def download_all_tickers(
     tickers = load_tickers()
     results = {}
     
-    # Convert save_date to datetime if it's a string
-    if isinstance(save_date, str):
-        save_date = pd.to_datetime(save_date).to_pydatetime()
-    
     for ticker in tickers:
         try:
             file_path = download_and_save_ticker_data(
                 ticker=ticker,
                 start_date=start_date,
-                end_date=end_date or datetime.now(),  # Use current time if end_date not provided
+                end_date=end_date,
                 interval=interval,
-                period=period,
-                save_date=save_date
+                period=period
             )
             results[ticker] = file_path
         except Exception as e:
