@@ -19,7 +19,7 @@ TICKERS_DIR = PROJECT_ROOT / "tickers"
 # File path patterns - these are the only things you need to change
 # to modify the file structure
 TICKER_DATA_PATTERN = "{ticker}/data/{date}_{ticker}_data.csv"
-SIGNAL_FILE_PATTERN = "{ticker}/signals/{date}_{ticker}_signal.csv"
+SIGNAL_FILE_PATTERN = "{ticker}/signals/{date}_{ticker}_signal_{confidence_type}.csv"
 
 def get_ticker_data_path(ticker: str, date: str) -> str:
     """
@@ -37,17 +37,22 @@ def get_ticker_data_path(ticker: str, date: str) -> str:
     path = (TICKERS_DIR / TICKER_DATA_PATTERN.format(ticker=ticker, date=date)).resolve()
     return str(path)
 
-def get_signal_file_path(ticker: str, date: str) -> str:
+def get_signal_file_path(ticker: str, date: str, confidence_type: str = 'dynamic') -> str:
     """
     Get the path to a signal file.
     
     Args:
         ticker: Stock ticker symbol
         date: Date string in YYYYMMDD format
+        confidence_type: Type of confidence threshold ('fixed' or 'dynamic')
         
     Returns:
         String path to the signal file
-        Format: "tickers/{ticker}/signals/{date}_{ticker}_signal.csv"
+        Format: "tickers/{ticker}/signals/{date}_{ticker}_signal_{confidence_type}.csv"
     """
-    path = (TICKERS_DIR / SIGNAL_FILE_PATTERN.format(ticker=ticker, date=date)).resolve()
+    path = (TICKERS_DIR / SIGNAL_FILE_PATTERN.format(
+        ticker=ticker, 
+        date=date,
+        confidence_type=confidence_type
+    )).resolve()
     return str(path)

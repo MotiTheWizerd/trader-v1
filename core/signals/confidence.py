@@ -8,7 +8,8 @@ from typing import Tuple, Optional
 import numpy as np
 import pandas as pd
 
-from core.config.constants import WINDOW_CONF, Z_MIN, QUANTILE_MIN, USE_QUANTILE
+from core.config import console
+from core.config.constants import WINDOW_CONF, Z_MIN, QUANTILE_MIN, USE_QUANTILE, USE_DYNAMIC_CONFIDENCE
 
 def calculate_dynamic_threshold(
     values: pd.Series,
@@ -62,31 +63,67 @@ def apply_confidence_filter(
     df: pd.DataFrame,
     confidence_col: str = 'confidence',
     signal_col: str = 'signal',
+    fixed_threshold: Optional[float] = None,
+    use_dynamic_confidence: Optional[bool] = None,
     **kwargs
 ) -> pd.DataFrame:
     """
-    Apply dynamic confidence threshold filtering to signals.
+    Apply confidence threshold filtering to signals.
     
     Args:
         df: DataFrame containing signals and confidence values
         confidence_col: Name of the column containing confidence values
         signal_col: Name of the column containing signals
+        fixed_threshold: Fixed threshold to use if not using dynamic confidence
+        use_dynamic_confidence: Whether to use dynamic confidence thresholds
         **kwargs: Additional arguments passed to calculate_dynamic_threshold
         
     Returns:
-        DataFrame with updated signals based on dynamic threshold
+        DataFrame with updated signals based on confidence threshold
+    """
+    """
+    Apply confidence threshold filtering to signals.
+    
+    Args:
+        df: DataFrame containing signals and confidence values
+        confidence_col: Name of the column containing confidence values
+        signal_col: Name of the column containing signals
+        fixed_threshold: If provided and USE_DYNAMIC_CONFIDENCE is False, use this fixed threshold
+        **kwargs: Additional arguments passed to calculate_dynamic_threshold
+        
+    Returns:
+        DataFrame with updated signals based on confidence threshold
     """
     # Make a copy to avoid modifying the original
     df = df.copy()
     
-    # Calculate dynamic thresholds
-    thresholds, method = calculate_dynamic_threshold(
-        df[confidence_col],
-        **kwargs
-    )
+    # Determine which confidence type to use
+    use_dynamic = USE_DYNAMIC_CONFIDENCE if use_dynamic_confidence is None else use_dynamic_confidence
     
-    # Store the threshold values for analysis
-    df['threshold_used'] = thresholds
+    try:
+        if use_dynamic:
+            # Calculate dynamic thresholds
+            thresholds, method = calculate_dynamic_threshold(
+                df[confidence_col],
+                **kwargs
+            )
+            df['threshold_used'] = thresholds
+            df['threshold_method'] = method
+        else:
+            # Use fixed threshold
+            if fixed_threshold is None:
+                # Fall back to the first value from kwargs or a default
+                fixed_threshold = kwargs.get('fallback_threshold', 0.005)
+            thresholds = pd.Series(fixed_threshold, index=df.index)
+            df['threshold_used'] = fixed_threshold
+            method = f"fixed ({fixed_threshold:.6f})"
+            df['threshold_method'] = method
+    except Exception as e:
+        console.print(f"[yellow]Warning in apply_confidence_filter: {str(e)}[/yellow]")
+        if 'threshold_used' not in df.columns:
+            df['threshold_used'] = fixed_threshold if fixed_threshold is not None else 0.005
+        if 'threshold_method' not in df.columns:
+            df['threshold_method'] = 'error_default'
     
     # Apply threshold filter (only keep signals above threshold)
     mask_low_confidence = (df[confidence_col] < thresholds) & (df[signal_col] != 'STAY')

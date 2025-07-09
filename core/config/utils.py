@@ -7,7 +7,8 @@ including environment variables, type conversion, and validation.
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional, Type, TypeVar, Union
+import os
+from typing import Any, Dict, Optional, Type, TypeVar, Union, overload
 
 from dotenv import load_dotenv
 
@@ -87,6 +88,23 @@ def get_config_path() -> Path:
         Path to the configuration directory
     """
     return Path(__file__).parent
+
+def ensure_directory_exists(directory: Union[str, Path]) -> Path:
+    """
+    Ensure that a directory exists, creating it if necessary.
+    
+    Args:
+        directory: Path to the directory (as string or Path object)
+        
+    Returns:
+        Path object of the directory
+        
+    Raises:
+        OSError: If the directory cannot be created
+    """
+    dir_path = Path(directory).resolve()
+    dir_path.mkdir(parents=True, exist_ok=True)
+    return dir_path
 
 def get_project_root() -> Path:
     """

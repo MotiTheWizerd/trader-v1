@@ -12,9 +12,11 @@ console = Console()
 
 # Import and re-export the path functions
 from .paths import get_ticker_data_path, get_signal_file_path
+from .utils import ensure_directory_exists
 
 __all__ = [
     'console',
     'get_ticker_data_path',
     'get_signal_file_path',
+    'ensure_directory_exists',
 ]

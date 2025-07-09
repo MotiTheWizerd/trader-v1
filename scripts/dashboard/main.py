@@ -11,6 +11,7 @@ from rich.table import Table
 # Import dashboard modules
 from scripts.dashboard.data_cleaner import clean_data
 from scripts.dashboard.pipeline_operations import run_complete_pipeline, get_pipeline_status
+from scripts.dashboard.signal_operations import regenerate_signals
 
 # Initialize CLI app and console
 app = typer.Typer(help="Trading System Dashboard")
@@ -18,6 +19,7 @@ console = Console()
 
 # Add commands
 app.command(name="clean-data", help="Clean all data from the tickers/data directory")(clean_data)
+app.command(name="regenerate-signals", help="Regenerate signal files with specified confidence threshold")(regenerate_signals)
 
 # Main menu
 def show_menu():
@@ -39,7 +41,8 @@ def show_menu():
     menu_items = [
         ("1. Clean Data", "clean-data", "Remove all files from tickers/data"),
         ("2. Run Complete Pipeline", "run-pipeline", "Download data and generate signals"),
-        ("3. Exit", "exit", "Exit the dashboard")
+        ("3. Regenerate Signals", "regenerate-signals --interactive", "Regenerate signals with different settings"),
+        ("4. Exit", "exit", "Exit the dashboard")
     ]
     
     for item in menu_items:

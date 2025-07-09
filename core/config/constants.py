@@ -21,6 +21,7 @@ WINDOW_CONF = 100  # Rolling window size for dynamic confidence calculation
 Z_MIN = 1.0  # Minimum z-score for dynamic confidence threshold
 QUANTILE_MIN = 0.90  # Minimum quantile for dynamic confidence threshold
 USE_QUANTILE = False  # Whether to use quantile (True) or z-score (False) for dynamic threshold
+USE_DYNAMIC_CONFIDENCE = True  # Whether to use dynamic confidence thresholding (False for fixed) for dynamic threshold
 
 # Data processing
 CHUNK_SIZE = 1000  # Default chunk size for processing large datasets

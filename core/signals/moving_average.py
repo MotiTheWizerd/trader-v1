@@ -38,7 +38,8 @@ from rich.progress import (
 from core.config import (
     get_ticker_data_path,
     get_signal_file_path,
-    console  # Use the configured console
+    console,  # Use the configured console
+    ensure_directory_exists
 )
 from core.config.settings import DEBUG
 
@@ -107,23 +108,24 @@ def generate_ma_signals(
             # Take first 8 digits in case there's extra
             date_str = date_str[:8]
     
-    # Get file paths using the configuration
+    # Get input file path
     input_file = Path(get_ticker_data_path(ticker, date_str))
-    output_file = Path(get_signal_file_path(ticker, date_str))
     
     # Debug output
     if progress is None:
-        console.print(f"[yellow]Looking for input file: {input_file.absolute()}")
-        console.print(f"[yellow]Input file exists: {input_file.exists()}")
-        console.print(f"[yellow]Current working directory: {Path.cwd()}")
+        console.print(f"Looking for input file: {input_file}")
+        console.print(f"Input file exists: {input_file.exists()}")
+        console.print(f"Current working directory: {os.getcwd()}")
     
     # Check if input file exists
     if not input_file.exists():
-        console.print(f"[red]Input file not found: {input_file}")
+        if progress is None:
+            console.print(f"[red]Error: Input file not found: {input_file}[/red]")
         return None
         
-    # Ensure output directory exists
-    output_file.parent.mkdir(parents=True, exist_ok=True)
+    # Ensure output directory exists (use dynamic path as base)
+    output_dir = Path(get_signal_file_path(ticker, date_str, 'dynamic')).parent
+    output_dir.mkdir(parents=True, exist_ok=True)
     
     # Debug: List files in the input file's parent directory
     input_dir = input_file.parent
@@ -208,16 +210,13 @@ def generate_ma_signals(
     df.loc[mask_insufficient, "signal"] = "STAY"
     df.loc[mask_insufficient, "confidence"] = 0.0
     
-    # Apply confidence filter and get the masks
+    # Apply confidence threshold filter
     df = apply_confidence_filter(
         df,
         confidence_col='confidence',
         signal_col='signal',
-        window=100,  # Look back window for dynamic threshold
-        fallback_threshold=confidence_threshold,  # Fallback minimum confidence
-        z_min=2.0,  # For z-score method
-        quantile_min=0.9,  # For quantile method
-        use_quantile=False  # Use z-score method by default
+        fixed_threshold=confidence_threshold,
+        fallback_threshold=confidence_threshold
     )
     
     # Create masks for statistics
@@ -300,28 +299,71 @@ def generate_ma_signals(
     # Select and reorder columns
     df = df[[col for col in columns if col in df.columns]]
     
-    # Save signals to CSV
-    df.to_csv(output_file, index=False)
+    # Generate signals with both fixed and dynamic confidence
+    confidence_types = ['fixed', 'dynamic']
+    output_files = {}
     
-    # Print summary
-    buy_count = df["signal"].value_counts().get("BUY", 0)
-    sell_count = df["signal"].value_counts().get("SELL", 0)
-    stay_count = df["signal"].value_counts().get("STAY", 0)
+    for conf_type in confidence_types:
+        try:
+            # Create a copy of signals for this confidence type
+            current_signals = df.copy()
+            
+            # Apply the appropriate confidence filter
+            if conf_type == 'fixed':
+                # For fixed confidence, we force USE_DYNAMIC_CONFIDENCE=False
+                current_signals = apply_confidence_filter(
+                    current_signals,
+                    confidence_col='confidence',
+                    signal_col='signal',
+                    fixed_threshold=confidence_threshold,
+                    use_dynamic_confidence=False
+                )
+                threshold_used = confidence_threshold
+                threshold_method = 'fixed'
+            else:
+                # For dynamic confidence, use the default behavior
+                current_signals = apply_confidence_filter(
+                    current_signals,
+                    confidence_col='confidence',
+                    signal_col='signal',
+                    fixed_threshold=confidence_threshold,
+                    use_dynamic_confidence=True
+                )
+                threshold_used = current_signals['threshold_used'].iloc[0] if 'threshold_used' in current_signals.columns else confidence_threshold
+                threshold_method = current_signals.get('threshold_method', ['dynamic'])[0]
+            
+            # Update the threshold information
+            current_signals['threshold_used'] = threshold_used
+            current_signals['threshold_method'] = threshold_method
+            
+            # Get the appropriate output path
+            conf_output_file = get_signal_file_path(ticker, date_str, conf_type)
+            output_dir = Path(conf_output_file).parent
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Save the signals
+            current_signals.to_csv(conf_output_file, index=False)
+            output_files[conf_type] = conf_output_file
+            
+            # Calculate statistics for this confidence type
+            buy_count = (current_signals["signal"] == "BUY").sum()
+            sell_count = (current_signals["signal"] == "SELL").sum()
+            stay_count = (current_signals["signal"] == "STAY").sum()
+            
+            # Only show completion message if we're not using a progress bar
+            if progress is None:
+                console.print(f"\n[bold]{conf_type.capitalize()} confidence signals:[/bold]")
+                console.print(f"  [green]BUY signals: {buy_count}[/green]")
+                console.print(f"  [red]SELL signals: {sell_count}[/red]")
+                console.print(f"  [yellow]STAY signals: {stay_count}[/yellow]")
+                console.print(f"  [blue]Threshold: {threshold_used:.6f} ({threshold_method})[/blue]")
+                console.print(f"  [cyan]Saved to: {conf_output_file}[/cyan]")
+        except Exception as e:
+            console.print(f"[red]Error processing {conf_type} confidence for {ticker}: {str(e)}[/red]")
+            continue
     
-    # Calculate how many signals were downgraded due to low confidence or not being in peak zone
-    low_confidence_count = len(df[mask_low_confidence])
-    not_peak_count = len(df[mask_sell_not_peak & ~mask_low_confidence])
-    
-    # Only show completion message if we're not using a progress bar
-    if progress is None:
-        console.print(f"[bold green]Signal generation complete for {ticker} on {date_str}[/bold green]")
-        console.print(f"[green]BUY signals: {buy_count}[/green]")
-        console.print(f"[red]SELL signals: {sell_count}[/red]")
-        console.print(f"[yellow]STAY signals: {stay_count}[/yellow]")
-        console.print(f"[blue]Signals downgraded: {low_confidence_count} due to low confidence, {not_peak_count} SELLs not near peaks[/blue]")
-        console.print(f"[blue]Output saved to: {output_file}[/blue]")
-    
-    return str(output_file)
+    # Return the dynamic path for backward compatibility, or the first available path if dynamic failed
+    return output_files.get('dynamic', next(iter(output_files.values()), ''))
 
 def generate_all_ma_signals(
     date: Optional[Union[str, datetime]] = None,
