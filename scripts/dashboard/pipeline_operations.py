@@ -96,28 +96,15 @@ def run_complete_pipeline(
             try:
                 console.print("\n[bold blue]Generating trading signals...[/bold blue]")
                 
-                # Ensure the data directory is set correctly
-                data_dir = Path("tickers/data").resolve()
-                console.print(f"[blue]Looking for data in: {data_dir}[/blue]")
-                
-                # Create a progress bar for the signal generation
-                with Progress(
-                    TextColumn("[bold blue]{task.description}"),
-                    BarColumn(),
-                    TaskProgressColumn(),
-                    console=console
-                ) as progress:
-                    signals_results = generate_all_ma_signals(
-                        date=target_date,
-                        short_window=short_window,
-                        long_window=long_window,
-                        data_dir=data_dir,  # Explicitly set the data directory
-                        confidence_threshold=confidence_threshold,
-                        peak_window=peak_window,
-                        peak_threshold=peak_threshold,
-                        include_reasoning=include_reasoning,
-                        progress=progress
-                    )
+                signals_results = generate_all_ma_signals(
+                    date=target_date,
+                    short_window=short_window,
+                    long_window=long_window,
+                    confidence_threshold=confidence_threshold,
+                    peak_window=peak_window,
+                    peak_threshold=peak_threshold,
+                    include_reasoning=include_reasoning
+                )
                 
                 if not signals_results:
                     console.print("[yellow]⚠ No signals were generated![/yellow]")

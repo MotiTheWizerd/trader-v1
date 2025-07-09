@@ -8,12 +8,16 @@ import argparse
 import sys
 from datetime import datetime
 from pathlib import Path
-from rich.console import Console
+
+# Import configuration
+from core.config import (
+    PROJECT_ROOT,
+    console  # Use the configured console
+)
 
 # Add project root to path for absolute imports
-project_root = Path(__file__).parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 # Import scheduler components
 from scripts.scheduler import scheduler_job, is_market_open, ensure_directories
@@ -38,8 +42,7 @@ def main():
     
     args = parser.parse_args()
     
-    # Display test header
-    console = Console()
+    # Use the configured console
     console.print("[bold blue]===== SCHEDULER TEST MODE =====[/bold blue]")
     
     # Ensure directories exist

@@ -20,7 +20,6 @@ from rich import print as rprint
 from core.data import (
     download_ticker_data,  # Still needed for preview
     load_tickers,
-    ensure_data_directory,
     process_ticker_data,
     process_all_tickers
 )
@@ -85,9 +84,6 @@ def parse_args():
 def main():
     """Main function to download ticker data."""
     args = parse_args()
-    
-    # Ensure data directory exists
-    ensure_data_directory()
     
     # Get tickers to download
     if args.tickers:

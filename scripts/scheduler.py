@@ -41,14 +41,21 @@ from rich.console import Console
 from rich.table import Table
 from rich.progress import Progress, TextColumn, BarColumn, TaskProgressColumn
 
-# Import UI components
-import sys
-from pathlib import Path
+# Import configuration
+from core.config import (
+    PROJECT_ROOT,
+    TICKER_DATA_DIR,
+    SIGNALS_DIR,
+    LOGS_DIR,
+    get_ticker_data_path,
+    get_signal_file_path,
+    get_log_file_path,
+    console  # Use the configured console
+)
 
 # Add project root to path for absolute imports
-project_root = Path(__file__).parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 # Import project modules
 from core.data.downloader import load_tickers, download_ticker_data
@@ -60,13 +67,6 @@ from ui.scheduler_display import display
 # We'll use the display singleton from ui.scheduler_display instead of creating a console here
 
 # Constants
-TICKERS_FILE = Path("tickers.json")
-DATA_DIR = Path("tickers/data")
-SIGNALS_DIR = Path("tickers/signals")
-DEFAULT_INTERVAL = "5m"
-DEFAULT_PERIOD = "20d"
-
-# Market timezone (US Eastern Time)
 MARKET_TZ = pytz.timezone('US/Eastern')
 
 # Market hours (US Eastern Time)
@@ -77,19 +77,14 @@ MARKET_CLOSE = dt_time(16, 0)  # 4:00 PM ET
 NYSE_CALENDAR = mcal.get_calendar('NYSE')
 
 
-def ensure_directories() -> None:
-    """Ensure all required directories exist."""
-    os.makedirs(DATA_DIR, exist_ok=True)
-    os.makedirs(SIGNALS_DIR, exist_ok=True)
+def ensure_directories():
+    """Ensure all required directories exist.
     
-    # Load tickers and create directories for each
-    tickers = load_tickers()
-    for ticker in tickers:
-        os.makedirs(DATA_DIR / ticker, exist_ok=True)
-        os.makedirs(SIGNALS_DIR / ticker, exist_ok=True)
-    
-    # Log directory initialization
-    log_info("system_init", f"Ensured directories for {len(tickers)} tickers")
+    Note: This function is kept for backward compatibility but directories
+    are now managed by the core.config module.
+    """
+    # Directories are created automatically by core.config
+    console.print("[green]✓ All required directories are managed by core.config")
 
 
 def is_market_open() -> Tuple[bool, datetime]:
@@ -192,8 +187,8 @@ def is_market_open() -> Tuple[bool, datetime]:
 def download_and_save_snapshot(
     ticker: str,
     timestamp: datetime,
-    interval: str = DEFAULT_INTERVAL,
-    period: str = DEFAULT_PERIOD
+    interval: str = "5m",
+    period: str = "20d"
 ) -> Optional[str]:
     """
     Download and save a snapshot of ticker data with timestamp in filename.
@@ -208,12 +203,8 @@ def download_and_save_snapshot(
         Optional[str]: Path to the saved file or None if failed
     """
     try:
-        # Create directory if it doesn't exist
-        ticker_dir = DATA_DIR / ticker
-        os.makedirs(ticker_dir, exist_ok=True)
-        
         # Check if this is a new ticker or an existing one
-        is_new_ticker = len(list(ticker_dir.glob('*.csv'))) == 0
+        is_new_ticker = len(list(TICKER_DATA_DIR.glob(f"{ticker}/*.csv"))) == 0
         
         # For new tickers, download full history (20d)
         # For existing tickers, only get the latest 5 minutes
@@ -241,12 +232,13 @@ def download_and_save_snapshot(
         # Format timestamp for filename
         timestamp_str = timestamp.strftime("%Y%m%d_%H%M")
         
-        # Save to file
-        filename = f"{timestamp_str}.csv"
-        filepath = ticker_dir / filename
-        df.to_csv(filepath)
+        # Get the output file path using the configuration
+        output_file = get_ticker_data_path(ticker, timestamp_str)
         
-        success_msg = f"Saved {ticker} data to {filename}"
+        # Save to file
+        df.to_csv(output_file)
+        
+        success_msg = f"Saved {ticker} data to {output_file}"
         display.console.print(f"[green]{success_msg}[/green]")
         log_info("download_complete", success_msg, ticker=ticker, 
                 additional={"filepath": str(filepath), "rows": len(df)})

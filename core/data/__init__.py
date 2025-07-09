@@ -7,11 +7,10 @@ from core.data.downloader import (
     download_and_save_ticker_data,
     download_all_tickers,
     load_tickers,
-    ensure_data_directory,
     DEFAULT_INTERVAL,
     DEFAULT_PERIOD,
     TICKERS_FILE,
-    DATA_DIR
+    FILE_FORMAT
 )
 
 from core.data.cleaner import (
@@ -30,11 +29,10 @@ __all__ = [
     "download_and_save_ticker_data",
     "download_all_tickers",
     "load_tickers",
-    "ensure_data_directory",
     "DEFAULT_INTERVAL",
     "DEFAULT_PERIOD",
     "TICKERS_FILE",
-    "DATA_DIR",
+    "FILE_FORMAT",
     "clean_ticker_data",
     "validate_ticker_data",
     "process_ticker_data",

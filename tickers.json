@@ -1,12 +1,6 @@
 {
     "tickers": [
-        "AAPL",
-        "MSFT",
-        "TSLA",
-        "NVDA",
-        "AMZN",
-        "META",
-        "NFLX",
-        "AMD"
+        "AAPL"
+
     ]
 }

@@ -10,17 +10,14 @@ import pandas as pd
 import yfinance as yf
 from pathlib import Path
 
+# Import path configuration
+from core.config import get_ticker_data_path
+
 # Default parameters
 DEFAULT_INTERVAL = "5m"
 DEFAULT_PERIOD = "20d"
 TICKERS_FILE = Path("tickers.json")
-DATA_DIR = Path("tickers/data")
 FILE_FORMAT = "csv"  # Using CSV instead of parquet to avoid dependency issues
-
-
-def ensure_data_directory() -> None:
-    """Ensure the data directory exists."""
-    os.makedirs(DATA_DIR, exist_ok=True)
 
 
 def load_tickers() -> List[str]:
@@ -130,9 +127,11 @@ def download_ticker_data(
     return df
 
 
-def save_ticker_data(ticker: str, data: pd.DataFrame, date: Optional[datetime] = None) -> str:
+def save_ticker_data(
+    ticker: str, data: pd.DataFrame, date: Optional[datetime] = None
+) -> str:
     """
-    Save ticker data to a CSV file in the format tickers/data/<TICKER>/<YYYYMMdd>.csv
+    Save ticker data to a CSV file using the configured path format.
     
     Args:
         ticker (str): Ticker symbol
@@ -142,25 +141,23 @@ def save_ticker_data(ticker: str, data: pd.DataFrame, date: Optional[datetime] =
     Returns:
         str: Path to the saved file
     """
-    # Ensure the ticker directory exists
-    ticker_dir = DATA_DIR / ticker
-    os.makedirs(ticker_dir, exist_ok=True)
-    
-    # Use today's date if not provided
+    # Use provided date or today's date
     if date is None:
         date = datetime.now()
     
     # Format the date as YYYYMMdd
     date_str = date.strftime("%Y%m%d")
     
-    # Create the file path with ticker symbol in the filename
-    # Note: The extra underscore before the extension is required by the signal generator
-    file_path = ticker_dir / f"{date_str}_{ticker}_.{FILE_FORMAT}"
+    # Get the file path from configuration
+    file_path = get_ticker_data_path(ticker.upper(), date_str)
+    
+    # Ensure the parent directory exists
+    Path(file_path).parent.mkdir(parents=True, exist_ok=True)
     
     # Save the data
-    data.to_csv(file_path, index=False)
+    data.to_csv(file_path)
     
-    return str(file_path)
+    return file_path
 
 
 def download_and_save_ticker_data(

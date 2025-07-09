@@ -13,9 +13,7 @@ import pandas as pd
 from core.data.downloader import (
     download_ticker_data,
     save_ticker_data,
-    load_tickers,
-    ensure_data_directory,
-    DATA_DIR
+    load_tickers
 )
 from core.data.cleaner import clean_ticker_data, validate_ticker_data
 
@@ -86,9 +84,6 @@ def process_all_tickers(
     Returns:
         Dict[str, str]: Dictionary mapping ticker symbols to file paths
     """
-    # Ensure data directory exists
-    ensure_data_directory()
-    
     # Load tickers if not provided
     if tickers is None:
         tickers = load_tickers()

@@ -14,7 +14,6 @@ import argparse
 import sys
 from datetime import datetime
 from pathlib import Path
-from rich.console import Console
 from rich.table import Table
 from rich.progress import (
     Progress,
@@ -23,13 +22,17 @@ from rich.progress import (
     TaskProgressColumn
 )
 
+# Import configuration
+from core.config import (
+    console,  # Use the configured console
+    PROJECT_ROOT
+)
+
 # Add parent directory to path to allow importing from core
-sys.path.append(str(Path(__file__).parent.parent))
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from core.signals.moving_average import generate_ma_signals, generate_all_ma_signals
-
-# Initialize rich console
-console = Console()
 
 def main():
     """Main entry point for the script."""
@@ -59,10 +62,10 @@ def main():
         help="Long-term moving average window (default: 20)"
     )
     parser.add_argument(
-        "--data-dir", 
-        type=str, 
-        default="tickers/data", 
-        help="Directory containing ticker data (default: tickers/data)"
+        "--data-dir",
+        type=str,
+        default=DATA_DIR,
+        help="Directory containing ticker data (default: uses configured data directory)"
     )
     parser.add_argument(
         "--no-reasoning", 
