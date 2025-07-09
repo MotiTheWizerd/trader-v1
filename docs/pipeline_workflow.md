@@ -44,10 +44,18 @@ Responsible for acquiring historical price data:
 - Downloads OHLCV data from Yahoo Finance
 - Supports various intervals (1m, 5m, 1h, 1d)
 - Saves data to CSV files in the ticker-specific directories
+- File Naming Convention:
+  - Data files: `tickers/data/<TICKER>/<YYYYMMDD>_<TICKER>.csv`
+  - Signal files: `tickers/signals/<TICKER>/<YYYYMMDD>_<TICKER>_signals.csv`
 
 ### 3. Signal Generator (`core/signals/moving_average.py`)
 
-Processes OHLCV data to produce trading signals:
+Processes OHLCV data to produce trading signals. The signal generator:
+
+- Reads input files from: `tickers/data/<TICKER>/`
+- Saves output signals to: `tickers/signals/<TICKER>/`
+- Uses file naming convention: `<YYYYMMDD>_<TICKER>_signals.csv`
+- Maintains separation between raw data and generated signals
 
 - Calculates technical indicators (moving averages)
 - Applies signal logic (crossovers)

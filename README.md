@@ -10,8 +10,10 @@ A stock trading prediction system that analyzes ticker data and generates tradin
   - Full 20-day history for new tickers
   - Incremental 5-minute updates for existing tickers
 - Downloads historical OHLCV data for stock tickers using yfinance
-- Stores data in CSV format organized by ticker and date
-- Provides clean terminal UI using rich library
+- Organized directory structure:
+  - `tickers/data/<ticker>/<date>_<ticker>.csv` - Raw OHLCV data
+  - `tickers/signals/<ticker>/<date>_<ticker>_signals.csv` - Generated trading signals
+- Clean terminal UI using rich library
 - Generates trading signals based on technical indicators
 - Retry logic for network failures
 

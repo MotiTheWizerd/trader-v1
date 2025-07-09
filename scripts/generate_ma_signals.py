@@ -16,6 +16,12 @@ from datetime import datetime
 from pathlib import Path
 from rich.console import Console
 from rich.table import Table
+from rich.progress import (
+    Progress,
+    TextColumn,
+    BarColumn,
+    TaskProgressColumn
+)
 
 # Add parent directory to path to allow importing from core
 sys.path.append(str(Path(__file__).parent.parent))

@@ -30,12 +30,13 @@ def generate_ma_signals(
     date: Optional[Union[str, datetime]] = None,
     short_window: int = 5,
     long_window: int = 20,
-    data_dir: Path = Path("tickers/data"),
+    data_dir: Union[str, Path] = Path("tickers/data"),
     include_reasoning: bool = True,
     confidence_threshold: float = 0.005,
     peak_window: int = 12,
     peak_threshold: float = 0.99,
-    progress: Optional[Progress] = None
+    progress: Optional[Progress] = None,
+    task_id: Optional[int] = None
 ) -> str:
     """
     Generate moving average signals from OHLCV data.
@@ -45,12 +46,27 @@ def generate_ma_signals(
         date (Optional[Union[str, datetime]]): Date for the file, defaults to today
         short_window (int): Short-term moving average window
         long_window (int): Long-term moving average window
-        data_dir (Path): Directory containing ticker data
+        data_dir (Union[str, Path]): Directory containing ticker data
         include_reasoning (bool): Whether to include reasoning text with signals
     
     Returns:
         str: Path to the saved signals file
     """
+    # Only show debug info if we're not using a progress bar
+    if progress is None:
+        console.print(f"\n[yellow]=== Processing {ticker} ===[/yellow]")
+    console.print(f"[yellow]Data directory (input): {data_dir}")
+    
+    # Ensure data_dir is a Path object
+    data_dir = Path(data_dir)
+    console.print(f"[yellow]Data directory (resolved): {data_dir.absolute()}")
+    console.print(f"[yellow]Data directory exists: {data_dir.exists()}")
+    
+    # List all files in the data directory for debugging
+    if data_dir.exists():
+        console.print(f"[yellow]Contents of {data_dir}:")
+        for f in data_dir.glob('*'):
+            console.print(f"  - {f.name} (dir: {f.is_dir()})")
     # Use today's date if not provided
     if date is None:
         date = datetime.now()
@@ -63,13 +79,56 @@ def generate_ma_signals(
     date_str = date.strftime("%Y%m%d")
     
     # Create the file paths
-    ticker_dir = data_dir / ticker
-    input_file = ticker_dir / f"{date_str}.csv"
-    output_file = ticker_dir / f"{date_str}_signals.csv"
+    ticker_data_dir = data_dir / ticker
+    signals_dir = data_dir.parent / "signals" / ticker
+    
+    console.print(f"[yellow]Ticker data directory: {ticker_data_dir.absolute()}")
+    console.print(f"[yellow]Ticker data directory exists: {ticker_data_dir.exists()}")
+    
+    # Ensure signals directory exists
+    signals_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Note: The files are saved as YYYYMMDD_TICKER_.csv (with an extra underscore before .csv)
+    input_file = ticker_data_dir / f"{date_str}_{ticker}_.csv"
+    output_file = signals_dir / f"{date_str}_{ticker}_signals.csv"
+    
+    console.print(f"[yellow]Looking for input file: {input_file.absolute()}")
+    console.print(f"[yellow]Input file exists: {input_file.exists()}")
+    
+    if ticker_data_dir.exists():
+        console.print(f"[yellow]Files in {ticker_data_dir}:")
+        for f in ticker_data_dir.glob('*'):
+            console.print(f"  - {f.name} (size: {f.stat().st_size} bytes)")
+    
+    # Debug output
+    console.print(f"[yellow]Looking for data file: {input_file.absolute()}")
+    console.print(f"[yellow]Current working directory: {Path.cwd()}")
+    console.print(f"[yellow]File exists: {input_file.exists()}")
+    console.print(f"[yellow]Parent directory exists: {ticker_data_dir.exists()}")
+    if ticker_data_dir.exists():
+        files = list(ticker_data_dir.glob('*'))
+        console.print(f"[yellow]Files in directory {ticker_data_dir}:")
+        for f in files:
+            console.print(f"[yellow]  - {f.name} (exists: {f.exists()}, is_file: {f.is_file()})")
     
     # Check if input file exists
     if not input_file.exists():
-        raise FileNotFoundError(f"OHLCV data file not found: {input_file}")
+        console.print(f"[red]ERROR: File not found: {input_file.absolute()}")
+        console.print(f"[red]Current working directory: {Path.cwd()}")
+        console.print(f"[red]Trying to find file with pattern: {ticker_data_dir}/{date_str}_*.csv")
+        
+        # Try to find any matching files
+        matching_files = list(ticker_data_dir.glob(f"{date_str}_*.csv"))
+        if matching_files:
+            console.print("[yellow]Found these matching files:")
+            for f in matching_files:
+                console.print(f"  - {f.name}")
+        else:
+            console.print("[red]No matching files found!")
+        
+        raise FileNotFoundError(f"OHLCV data file not found: {input_file.absolute()}")
+    
+    console.print(f"[green]Found data file: {input_file.absolute()}")
     
     # Load OHLCV data
     console.print(f"[bold blue]Loading OHLCV data for {ticker} on {date_str}...[/bold blue]")
@@ -171,26 +230,28 @@ def generate_ma_signals(
     low_confidence_count = len(df[mask_low_confidence])
     not_peak_count = len(df[mask_sell_not_peak & ~mask_low_confidence])
     
-    console.print(f"[bold green]Signal generation complete for {ticker} on {date_str}[/bold green]")
-    console.print(f"[green]BUY signals: {buy_count}[/green]")
-    console.print(f"[red]SELL signals: {sell_count}[/red]")
-    console.print(f"[yellow]STAY signals: {stay_count}[/yellow]")
-    console.print(f"[blue]Signals downgraded: {low_confidence_count} due to low confidence, {not_peak_count} SELLs not near peaks[/blue]")
-    console.print(f"[blue]Output saved to: {output_file}[/blue]")
+    # Only show completion message if we're not using a progress bar
+    if progress is None:
+        console.print(f"[bold green]Signal generation complete for {ticker} on {date_str}[/bold green]")
+        console.print(f"[green]BUY signals: {buy_count}[/green]")
+        console.print(f"[red]SELL signals: {sell_count}[/red]")
+        console.print(f"[yellow]STAY signals: {stay_count}[/yellow]")
+        console.print(f"[blue]Signals downgraded: {low_confidence_count} due to low confidence, {not_peak_count} SELLs not near peaks[/blue]")
+        console.print(f"[blue]Output saved to: {output_file}[/blue]")
     
     return str(output_file)
-
 
 def generate_all_ma_signals(
     date: Optional[Union[str, datetime]] = None,
     short_window: int = 5,
     long_window: int = 20,
-    data_dir: Path = Path("tickers/data"),
+    data_dir: Union[str, Path] = Path("tickers/data"),
     include_reasoning: bool = True,
     confidence_threshold: float = 0.005,
     peak_window: int = 12,
     peak_threshold: float = 0.99,
-    use_single_progress: bool = True
+    progress: Optional[Progress] = None,
+    task_id: Optional[int] = None
 ) -> Dict[str, str]:
     """
     Generate moving average signals for all tickers with available data.
@@ -216,49 +277,99 @@ def generate_all_ma_signals(
     # Format the date as YYYYMMdd
     date_str = date.strftime("%Y%m%d")
     
+    # Debug output
+    console.print(f"[yellow]Scanning for ticker data in: {data_dir.absolute()}")
+    console.print(f"[yellow]Data directory exists: {data_dir.exists()}")
+    
     # Get all ticker directories
     ticker_dirs = [d for d in data_dir.iterdir() if d.is_dir()]
     tickers = [d.name for d in ticker_dirs]
     
+    console.print(f"[yellow]Found {len(tickers)} ticker directories: {tickers}")
+    
+    # Initialize counters
+    success_count = 0
+    failed_tickers = []
+    
+    # Ensure we have ticker directories
+    if not tickers:
+        console.print("[red]No ticker directories found!")
+        console.print(f"[red]Data directory: {data_dir.absolute()}")
+        console.print("[red]Contents of data directory:")
+        for f in data_dir.glob('*'):
+            console.print(f"  - {f.name} (dir: {f.is_dir()})")
+    
     results = {}
     
-    with Progress(
-        TextColumn("[bold blue]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        console=console
-    ) as progress:
+    # Create a new progress bar if one wasn't provided
+    progress_created = False
+    if progress is None:
+        progress = Progress(
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=console
+        )
+        progress.start()
+        progress_created = True
+    
+    # Add a new task if task_id wasn't provided
+    if task_id is None:
         task = progress.add_task(f"Generating signals for {len(tickers)} tickers...", total=len(tickers))
-        
-        for ticker in tickers:
-            try:
-                # Check if OHLCV data exists for this ticker and date
-                input_file = data_dir / ticker / f"{date_str}.csv"
-                if not input_file.exists():
-                    console.print(f"[yellow]Skipping {ticker}: No data for {date_str}[/yellow]")
-                    continue
-                
-                # Generate signals - pass the progress bar if using a single one
-                file_path = generate_ma_signals(
-                    ticker=ticker,
-                    date=date,
-                    short_window=short_window,
-                    long_window=long_window,
-                    data_dir=data_dir,
-                    include_reasoning=include_reasoning,
-                    confidence_threshold=confidence_threshold,
-                    peak_window=peak_window,
-                    peak_threshold=peak_threshold,
-                    progress=progress if use_single_progress else None
-                )
-                results[ticker] = file_path
-            except Exception as e:
-                console.print(f"[bold red]Error generating signals for {ticker}: {e}[/bold red]")
+    else:
+        task = task_id
+    
+    for ticker in tickers:
+        try:
+            # Check if OHLCV data exists for this ticker and date
+            # File format is YYYYMMDD_TICKER_.csv (with an extra underscore at the end)
+            input_file = data_dir / ticker / f"{date_str}_{ticker}_.csv"
+            if not input_file.exists():
+                console.print(f"[yellow]Skipping {ticker}: No data file found at {input_file.absolute()}[/yellow]")
+                # Debug: List files in the directory to help with troubleshooting
+                ticker_dir = data_dir / ticker
+                if ticker_dir.exists():
+                    files = list(ticker_dir.glob("*.csv"))
+                    if files:
+                        console.print(f"[yellow]Found these files in {ticker_dir}:")
+                        for f in files:
+                            console.print(f"  - {f.name}")
+                continue
             
-            progress.update(task, advance=1)
+            # Generate signals with the progress bar
+            file_path = generate_ma_signals(
+                ticker=ticker,
+                date=date,
+                short_window=short_window,
+                long_window=long_window,
+                data_dir=data_dir,
+                include_reasoning=include_reasoning,
+                confidence_threshold=confidence_threshold,
+                peak_window=peak_window,
+                peak_threshold=peak_threshold,
+                progress=progress,
+                task_id=task
+            )          
+            results[ticker] = file_path
+            success_count += 1
+            
+            if progress is not None:
+                progress.update(task, advance=1)
+        
+        except Exception as e:
+            console.print(f"[red]Error processing {ticker}: {str(e)}[/red]")
+            failed_tickers.append(ticker)
+            if progress is not None:
+                progress.update(task, advance=1)
     
     # Print summary
+    if progress_created:
+        progress.stop()
+    
     console.print(f"[bold green]Signal generation complete for all tickers on {date_str}[/bold green]")
-    console.print(f"[green]Successfully processed {len(results)} out of {len(tickers)} tickers[/green]")
+    if success_count > 0:
+        console.print(f"[green]Successfully processed {success_count} out of {len(tickers)} tickers[/green]")
+    if failed_tickers:
+        console.print(f"[red]Failed to process {len(failed_tickers)} tickers: {failed_tickers}[/red]")
     
     return results

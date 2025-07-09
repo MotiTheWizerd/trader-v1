@@ -17,6 +17,7 @@ dependencies = [
     "apscheduler (>=3.11.0,<4.0.0)",
     "pandas-market-calendars (>=5.1.1,<6.0.0)",
     "finnhub-python (>=2.4.24,<3.0.0)",
+    "typer[all] (>=0.16.0,<0.17.0)",
 ]
 
 

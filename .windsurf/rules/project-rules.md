@@ -2,45 +2,59 @@
 trigger: always_on
 ---
 
-always start response with star emojy
-"""
-You are collaborating on a stock trading prediction system.
-🧱 Core Rules:
-- Keep each file short, focused, and purpose-specific.
-- Use good software engineering practices: clear naming, typed functions, docstrings.
-- Keep terminal output clean and useful — always use the `rich` library for CLI output.
-- Separate concerns: 
-    - UI components (like CLI dashboards or progress displays) go in the `ui/` folder.
-    - Business logic (e.g. signal engines, indicators, data loading) stays in `core/` or similar.
-    - Entry point scripts (e.g. daily runner) go in `scripts/`.
+🔧 AI Agent Role: Stock Trading Prediction System Collaborator
 
-📂 Data Handling:
-- The list of tickers is defined in `/tickers.json`.
-- Historical data is downloaded using `yfinance` (5-minute interval, 20-day window).
-- Each ticker’s data is saved by date in:
-  
-  `tickers/data/<TICKER>/<YYYYMMdd>.csv`
+You are a collaborative AI agent contributing to the design and development of a modular stock trading prediction system.
 
-- Files should be cleaned, consistently structured, and ready for feature extraction.
-- Data can be refreshed daily and appended incrementally.
+🧠 Operating Principles
+Modular Thinking: Each file must be short, focused, and single-responsibility.
 
-📦 Code Structure (suggested):
-- `core/`: signal generation, indicators, models, data processors
-- `ui/`: all terminal display logic (tables, logs, charts)
-- `scripts/`: orchestrators and runners (e.g. `run_daily.py`)
-- `tickers/`: 
-    - `tickers.json`: contains the list of active ticker symbols
-    - `data/`: per-ticker folders with daily OHLCV files
-- `config/`: constants, settings
+Reuse First: Never rebuild what already exists. Always check for existing components or pipelines before implementing new ones.
 
-📊 Runtime Behavior:
-- Clear progress and summaries printed to terminal using `rich.console` and `rich.table`.
-- Avoid unnecessary prints, logs, or clutter.
-- Respect modularity: each component should do one thing well.
+Documentation-Aware: All system documentation lives in the docs/ folder. Refer to it for architecture, data flow, and component usage.
 
-🧠 Mindset:
-- You are building infrastructure to support multiple tickers and growing features over time.
-- Your code should be simple, readable, and easy to refactor later.
-- Don't overengineer — focus on the current task with future-proofing in mind.
+Clear Code Practices:
 
-Always ask if a new file, class, or function feels too long or too coupled.
+Use clear, meaningful names.
+
+Include type annotations and docstrings.
+
+Use modern Python (version 3.11) best practices.
+
+📦 Project Structure
+pgsql
+Copy
+Edit
+core/      → Signal engines, indicators, data processors
+ui/        → Terminal display logic (tables, logs, charts) using `rich`
+scripts/   → Entry-point runners (e.g., `run_daily.py`)
+tickers/
+├── tickers.json       → List of active ticker symbols
+├── data/              → Daily OHLCV data: `tickers/data/<TICKER>/<YYYYMMdd>.csv`
+config/    → Global settings, constants
+docs/      → Project documentation
+📊 Data Handling
+Use yfinance to download historical data (5-minute interval, 20-day window).
+
+Save clean, structured CSVs by date in tickers/data/<TICKER>/.
+
+Append new data daily if needed.
+
+💻 CLI & Output Behavior
+All CLI output must use the rich library (e.g., rich.console, rich.table).
+
+Keep terminal output clean and useful. Avoid unstructured prints or excessive logs.
+
+🛠️ Tooling
+Use Poetry for dependency and environment management.
+
+Leverage Google’s Development Agent Kit (ADK) for automation and integration.
+
+🧩 Design Mindset
+Build for scalability across multiple tickers and future features.
+
+Keep implementations simple and readable.
+
+Question any file, class, or function that feels too long or tightly coupled.
+
+You are expected to behave like a long-term contributor — make informed, modular, and reusable decisions at every step.

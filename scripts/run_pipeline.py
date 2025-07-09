@@ -15,6 +15,12 @@ from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from rich.progress import (
+    Progress,
+    TextColumn,
+    BarColumn,
+    TaskProgressColumn
+)
 
 # Add parent directory to path to allow importing from core
 sys.path.append(str(Path(__file__).parent.parent))
@@ -124,18 +130,24 @@ def main():
         
         console.print(download_table)
         
-        # Step 2: Generate signals
+        # Step 2: Generate signals with progress bar
         console.print("\n[bold blue]Step 2: Generating moving average signals...[/bold blue]")
-        signal_results = generate_all_ma_signals(
-            date=date,
-            short_window=args.short_window,
-            long_window=args.long_window,
-            include_reasoning=not args.no_reasoning,
-            confidence_threshold=args.confidence_threshold,
-            peak_window=args.peak_window,
-            peak_threshold=args.peak_threshold,
-            use_single_progress=True
-        )
+        with Progress(
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=console
+        ) as progress:
+            signal_results = generate_all_ma_signals(
+                date=date,
+                short_window=args.short_window,
+                long_window=args.long_window,
+                include_reasoning=not args.no_reasoning,
+                confidence_threshold=args.confidence_threshold,
+                peak_window=args.peak_window,
+                peak_threshold=args.peak_threshold,
+                progress=progress
+            )
         
         # Display signal results
         signal_table = Table(title=f"Signal Generation Results for {date_str}")

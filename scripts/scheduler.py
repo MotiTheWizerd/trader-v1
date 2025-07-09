@@ -309,19 +309,14 @@ def generate_and_save_signals(
         signals_dir = SIGNALS_DIR / ticker
         os.makedirs(signals_dir, exist_ok=True)
         
-        # Create a temporary copy of the data file with the format expected by generate_ma_signals
+        # Get the data directory path (parent of ticker directory)
         data_file_path = Path(data_file)
         ticker_dir = data_file_path.parent
-        temp_file_path = ticker_dir / f"{date_only_str}.csv"
-        
-        # Copy the data to the temp file with the expected format
-        df.to_csv(temp_file_path)
-        
-        # Get the parent directory of the ticker directory (should be the data directory)
-        data_dir = ticker_dir.parent
+        data_dir = ticker_dir.parent  # This is the parent directory containing all ticker directories
         
         try:
             # Use the core signal generation function
+            # Pass the data directory and let generate_ma_signals handle the file paths
             output_file = generate_ma_signals(
                 ticker=ticker,
                 date=date_only_str,  # Use the date string format YYYYMMDD

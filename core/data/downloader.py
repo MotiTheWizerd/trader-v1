@@ -153,8 +153,9 @@ def save_ticker_data(ticker: str, data: pd.DataFrame, date: Optional[datetime] =
     # Format the date as YYYYMMdd
     date_str = date.strftime("%Y%m%d")
     
-    # Create the file path
-    file_path = ticker_dir / f"{date_str}.{FILE_FORMAT}"
+    # Create the file path with ticker symbol in the filename
+    # Note: The extra underscore before the extension is required by the signal generator
+    file_path = ticker_dir / f"{date_str}_{ticker}_.{FILE_FORMAT}"
     
     # Save the data
     data.to_csv(file_path, index=False)
@@ -210,7 +211,7 @@ def download_all_tickers(
     end_date: Optional[Union[str, datetime]] = None,
     interval: str = DEFAULT_INTERVAL,
     period: Optional[str] = None,
-    save_date: Optional[datetime] = None,
+    save_date: Optional[Union[str, datetime]] = None,
 ) -> Dict[str, str]:
     """
     Download data for all tickers in the tickers.json file.
@@ -220,24 +221,30 @@ def download_all_tickers(
         end_date (Optional[Union[str, datetime]]): End date for data download
         interval (str): Data interval (e.g., "1d", "1h", "5m")
         period (Optional[str]): Period to download
-        save_date (Optional[datetime]): Date to use for the file name, defaults to today
+        save_date (Optional[Union[str, datetime]]): Date to use for the file name, defaults to today
     
     Returns:
         Dict[str, str]: Dictionary mapping ticker symbols to their data file paths
     """
-    # Ensure the base data directory exists
-    ensure_data_directory()
-    
     tickers = load_tickers()
     results = {}
+    
+    # Convert save_date to datetime if it's a string
+    if isinstance(save_date, str):
+        save_date = pd.to_datetime(save_date).to_pydatetime()
     
     for ticker in tickers:
         try:
             file_path = download_and_save_ticker_data(
-                ticker, start_date, end_date, interval, period, save_date
+                ticker=ticker,
+                start_date=start_date,
+                end_date=end_date or datetime.now(),  # Use current time if end_date not provided
+                interval=interval,
+                period=period,
+                save_date=save_date
             )
             results[ticker] = file_path
         except Exception as e:
-            print(f"Error downloading data for {ticker}: {e}")
+            print(f"Error downloading {ticker}: {str(e)}")
     
     return results
