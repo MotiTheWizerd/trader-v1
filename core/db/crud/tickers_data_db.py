@@ -51,10 +51,9 @@ def save_ticker_data(db, ticker: str, df: pd.DataFrame, batch_size: int = 100, b
     
     total_saved = 0
     
-    # Process in batches to avoid SQL parameter limits
-    for i in range(0, len(df), batch_size):
-        # Start a new transaction for each batch
-        try:
+    try:
+        # Process in batches to avoid SQL parameter limits
+        for i in range(0, len(df), batch_size):
             batch_df = df.iloc[i:i + batch_size]
             
             # Convert DataFrame to list of dictionaries
@@ -91,8 +90,8 @@ def save_ticker_data(db, ticker: str, df: pd.DataFrame, batch_size: int = 100, b
             if not records:
                 continue
                 
-            # Execute in a savepoint to isolate batch operations
-            with db.begin_nested():
+            try:
+                # Execute the insert/update operation
                 stmt = insert(TickersData.__table__).values(records)
                 stmt = stmt.on_conflict_do_update(
                     index_elements=['ticker', 'timestamp'],
@@ -108,30 +107,58 @@ def save_ticker_data(db, ticker: str, df: pd.DataFrame, batch_size: int = 100, b
                 )
                 
                 result = db.execute(stmt)
-                total_saved += result.rowcount
+                batch_saved = result.rowcount
+                total_saved += batch_saved
                 
-            # Commit the savepoint
-            db.commit()
-            
-        except Exception as e:
-            # Rollback the failed transaction
-            db.rollback()
-            print(f"Error saving batch {i//batch_size + 1}: {str(e)}")
-            
-            # If batch size is already small, try to continue with next batch
-            if batch_size <= 10:
-                print("Batch size already at minimum, skipping batch")
-                continue
+                # Commit after each successful batch
+                db.commit()
                 
-            # Otherwise, try with a smaller batch size
-            print(f"Retrying with smaller batch size: {batch_size//2}")
-            return save_ticker_data(db, ticker, df, batch_size // 2, base_time)
-    
-    return total_saved
+                print(f"Saved {batch_saved} records for {ticker} in batch {i//batch_size + 1}")
+                
+            except Exception as e:
+                db.rollback()
+                print(f"Error saving batch {i//batch_size + 1} for {ticker}: {str(e)}")
+                
+                # If batch size is already small, try to continue with next batch
+                if batch_size <= 10:
+                    print("Batch size already at minimum, skipping batch")
+                    continue
+                    
+                # Otherwise, try with a smaller batch size
+                print(f"Retrying with smaller batch size: {batch_size//2}")
+                return save_ticker_data(db, ticker, df, batch_size // 2, base_time)
+        
+        return total_saved
+        
+    except Exception as e:
+        db.rollback()
+        print(f"Error in save_ticker_data for {ticker}: {str(e)}")
+        return 0
 
 def get_prices_for_ticker(db, ticker: str):
     return db.query(TickersData).filter(TickersData.ticker == ticker).all()
 
 def delete_old_prices(db, before_timestamp):
+    """Delete price records older than the specified timestamp."""
     db.query(TickersData).filter(TickersData.timestamp < before_timestamp).delete()
     db.commit()
+
+def get_latest_timestamp(db: Session, ticker: str) -> Optional[datetime]:
+    """
+    Get the most recent timestamp for a ticker from the database.
+    
+    Args:
+        db: Database session
+        ticker: Ticker symbol
+        
+    Returns:
+        Optional[datetime]: Most recent timestamp for the ticker, or None if no data exists
+    """
+    result = db.query(TickersData.timestamp)\
+        .filter(TickersData.ticker == ticker)\
+        .order_by(TickersData.timestamp.desc())\
+        .first()
+    
+    if result:
+        return result[0]  # Return just the timestamp
+    return None

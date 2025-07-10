@@ -205,6 +205,32 @@ class SchedulerDisplay:
         """
         self.console.print(f"[bold red]Error processing {ticker}: {str(error)}[/bold red]")
 
+    def show_next_update_countdown(self, next_run_time: datetime) -> None:
+        """
+        Display a countdown to the next scheduled update.
+        
+        Args:
+            next_run_time (datetime): When the next update is scheduled to run
+        """
+        from datetime import datetime
+        
+        # Ensure we're working with timezone-aware datetimes
+        now = datetime.now(pytz.UTC)
+        if next_run_time.tzinfo is None:
+            next_run_time = pytz.UTC.localize(next_run_time)
+            
+        time_until_next = next_run_time - now
+        if time_until_next.total_seconds() < 0:
+            return  # Don't show countdown if the next run time is in the past
+            
+        seconds = int(time_until_next.total_seconds())
+        minutes, seconds = divmod(seconds, 60)
+        
+        # Only show if less than 5 minutes remaining
+        if minutes < 5:
+            countdown_str = f"[bold cyan]Next update in: {minutes:02d}:{seconds:02d}[/bold cyan]"
+            self.console.print(countdown_str, end="\r")
+
 
 # Singleton instance for global use
 display = SchedulerDisplay()

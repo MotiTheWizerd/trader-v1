@@ -37,6 +37,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 import time
+import threading
 from datetime import datetime, time as dt_time, timedelta
 from typing import Dict, List, Optional, Tuple, Union, Any
 
@@ -52,32 +53,12 @@ from rich.console import Console
 from rich.table import Table
 from rich.progress import Progress, TextColumn, BarColumn, TaskProgressColumn
 
-# Import configuration
-from core.config import (
-    PROJECT_ROOT,
-    TICKER_DATA_DIR,
-    SIGNALS_DIR,
-    LOGS_DIR,
-    get_ticker_data_path,
-    get_signal_file_path,
-    get_log_file_path,
-    console  # Use the configured console
-)
-
-# Add project root to path for absolute imports
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-# Import project modules
-
-# Default configuration
-DEFAULT_INTERVAL = "5m"  # 5-minute intervals
-DEFAULT_PERIOD = "20d"    # 20 days of historical data
-
+# Local imports
 from core.data.downloader import load_tickers, download_ticker_data
 from core.signals.moving_average import generate_ma_signals
 from core.logger import log_info, log_warning, log_error
 from scripts.scheduler_metadata import save_signal_metadata, display_signal_summary
+from core.db.crud.tickers_data_db import save_ticker_data, get_latest_timestamp
 from ui.scheduler_display import display
 
 # We'll use the display singleton from ui.scheduler_display instead of creating a console here
@@ -99,8 +80,15 @@ def ensure_directories():
     Note: This function is kept for backward compatibility but directories
     are now managed by the core.config module.
     """
-    # Directories are created automatically by core.config
-    console.print("[green]✓ All required directories are managed by core.config")
+    # Directories are now managed by core.config
+    # This function is kept for backward compatibility
+    try:
+        from ui.scheduler_display import display
+        if hasattr(display, 'console'):
+            display.console.print("[green]✓ All required directories are managed by core.config")
+    except ImportError:
+        # If the display module isn't available, just skip the message
+        pass
 
 
 def is_market_open() -> Tuple[bool, datetime]:
@@ -248,48 +236,107 @@ def download_and_save_snapshot(
         record in the database for the given ticker. For the first run, it will
         fetch the last day of data.
     """
-    try:
-        from core.db.deps import get_db
-        from core.db.crud.tickers_data_db import save_ticker_data
+    from core.db.deps import get_db
+    from datetime import timedelta
+    
+    # Ensure we're working with timezone-aware datetimes
+    now = datetime.now(pytz.UTC)
+    
+    # Use context manager for database connection
+    with get_db() as db:
+        # Get the most recent timestamp for this ticker
+        last_timestamp = get_latest_timestamp(db, ticker)
         
-        # Log what we're doing
-        display.console.print(f"[blue]Downloading {ticker} data...[/blue]")
-        log_info("download_start", f"Downloading data for ticker {ticker}", ticker=ticker, 
-                additional={"interval": interval, "period": period})
-        
-        # Download data
-        df = download_ticker_data(ticker, interval=interval, period=period)
+        if last_timestamp:
+            # Make sure the timestamp is timezone-aware
+            if last_timestamp.tzinfo is None:
+                last_timestamp = pytz.UTC.localize(last_timestamp)
+            
+            # Add a small buffer to ensure we don't miss any data
+            start_date = last_timestamp - timedelta(minutes=5)
+            
+            # Ensure start_date is not in the future
+            if start_date > now:
+                start_date = now - timedelta(minutes=5)
+            
+            display.console.print(f"[blue]Fetching {ticker} data since {start_date}...[/blue]")
+            log_info("download_incremental", 
+                    f"Fetching {ticker} data since last record", 
+                    ticker=ticker,
+                    additional={"last_timestamp": last_timestamp.isoformat()})
+            
+            # Download only new data
+            df = download_ticker_data(
+                ticker=ticker,
+                interval=interval,
+                start_date=start_date,
+                end_date=min(now, timestamp)  # Ensure end_date is not in the future
+            )
+        else:
+            # First run - get last day of data
+            start_date = now - timedelta(days=1)
+            display.console.print(f"[blue]Initial download for {ticker} (last 24h)...[/blue]")
+            log_info("download_initial", 
+                    f"Initial download for {ticker} (last 24h)",
+                    ticker=ticker)
+            
+            df = download_ticker_data(
+                ticker=ticker,
+                interval=interval,
+                start_date=start_date,
+                end_date=now  # Use current time for first run
+            )
         
         if df is None or df.empty:
-            error_msg = f"No data available for {ticker}"
-            display.console.print(f"[red]{error_msg}[/red]")
-            log_warning("download_empty", error_msg, ticker=ticker)
-            return None
+            log_warning("no_new_data", 
+                      f"No new data available for {ticker}",
+                      ticker=ticker)
+            return {
+                "ticker": ticker,
+                "status": "success",
+                "row_count": 0,
+                "records_saved": 0,
+                "timestamp": timestamp.isoformat()
+            }
         
-        # Save to database
-        with get_db() as db:
-            saved_count = save_ticker_data(db, ticker, df)
-        
-        success_msg = f"Saved {saved_count} records for {ticker} to database"
-        display.console.print(f"[green]{success_msg}[/green]")
-        log_info("download_complete", success_msg, ticker=ticker, 
-                additional={"records_saved": saved_count})
-        
-        # Get the number of rows in the DataFrame
-        row_count = len(df) if df is not None else 0
-        
-        return {
-            "ticker": ticker,
-            "records_saved": saved_count,
-            "row_count": row_count,  # Add row count to the result
-            "timestamp": timestamp.isoformat()
-        }
-        
-    except Exception as e:
-        error_msg = f"Error downloading {ticker}: {str(e)}"
-        display.console.print(f"[red]{error_msg}[/red]")
-        log_error("download_failed", error_msg, ticker=ticker, exception=e)
-        return None
+        try:
+            # Save data to database
+            records_saved = save_ticker_data(db, ticker, df)
+            
+            # Explicitly commit the transaction
+            db.commit()
+            
+            log_info("data_saved", 
+                    f"Saved {records_saved} new records for {ticker}",
+                    ticker=ticker,
+                    additional={
+                        "row_count": len(df),
+                        "records_saved": records_saved,
+                        "interval": interval
+                    })
+            
+            return {
+                "ticker": ticker,
+                "status": "success",
+                "row_count": len(df),
+                "records_saved": records_saved,
+                "timestamp": timestamp.isoformat()
+            }
+            
+        except Exception as e:
+            # The context manager will handle rollback on exception
+            db.rollback()
+            error_msg = f"Failed to download/save data for {ticker}: {str(e)}"
+            log_error("download_failed", 
+                     error_msg,
+                     ticker=ticker,
+                     exception=e)
+            return {
+                "ticker": ticker,
+                "status": "error",
+                "error": str(e),
+                "timestamp": timestamp.isoformat()
+            }
 
 
 def generate_and_save_signals(
@@ -449,116 +496,241 @@ def process_ticker(
     Returns:
         Dict[str, Any]: Dictionary with data file path and status
     """
-    # Initialize result dictionary with expected fields for display
-    result = {
-        "ticker": ticker,
-        "status": "failed",  # Will be updated to "success" if successful
-        "attempts": 1,       # Default to 1 attempt
-        "data_file": None,
-        "signal_file": None,  # Keep for compatibility with display
-        "error": None
-    }
+    from time import sleep
+    from datetime import datetime
+    import pytz
+    from core.db.deps import get_db
+    
+    # Ensure timestamp is timezone-aware
+    if timestamp.tzinfo is None:
+        timestamp = pytz.UTC.localize(timestamp)
+    
+    attempt = 0
+    last_error = None
+    db = None
     
     try:
-        # Download and save data
-        data_result = download_and_save_snapshot(
-            ticker=ticker,
-            timestamp=timestamp,
-            interval=interval,
-            period=period
-        )
-        
-        if not data_result or "error" in data_result:
-            error_msg = data_result.get("error", "Unknown error downloading data") if data_result else "No data returned"
-            result["error"] = error_msg
-            return result
-            
-        # Update result for successful download
-        result.update({
-            "status": "success",
-            "data_file": data_result.get("data_file"),
-            "row_count": data_result.get("row_count", 0),  # Add row count to result
-            "records_saved": data_result.get("records_saved", 0)  # Also include records_saved for completeness
-        })
-        
-    except Exception as e:
-        error_msg = f"Error processing {ticker}: {str(e)}"
-        log_error("ticker_processing_error", error_msg, ticker=ticker, error=str(e))
-        result["error"] = error_msg
+        while attempt <= retry_count:
+            try:
+                # Use context manager for database connection
+                with get_db() as db:
+                    # Download and save the data
+                    result = download_and_save_snapshot(
+                        ticker=ticker,
+                        timestamp=timestamp,
+                        interval=interval,
+                        period=period
+                    )
+                    
+                    if result is None or result.get('status') == 'error':
+                        error_msg = result.get('error', 'Unknown error') if result else 'No result returned'
+                        raise Exception(f"Failed to download/save data: {error_msg}")
+                        
+                    # Add attempt count to result
+                    result["attempts"] = attempt + 1
+                    
+                    # Commit the transaction
+                    db.commit()
+                    
+                    return result
+                    
+            except Exception as e:
+                last_error = str(e)
+                attempt += 1
+                
+                if attempt <= retry_count:
+                    display.console.print(f"[yellow]Attempt {attempt} failed for {ticker}, retrying in {retry_delay}s... ({last_error})[/yellow]")
+                    sleep(retry_delay)
+                else:
+                    # Log final failure
+                    error_msg = f"Failed to process {ticker} after {retry_count} attempts: {last_error}"
+                    display.console.print(f"[red]{error_msg}[/red]")
+                    log_error("ticker_processing_failed", 
+                             error_msg, 
+                             ticker=ticker,
+                             exception=e)
+                    
+                    return {
+                        "ticker": ticker,
+                        "status": "error",
+                        "error": last_error,
+                        "attempts": attempt,
+                        "timestamp": timestamp.isoformat()
+                    }
     
-    return result
+    except Exception as e:
+        # Catch any unexpected errors
+        error_msg = f"Unexpected error processing {ticker}: {str(e)}"
+        display.console.print(f"[red]{error_msg}[/red]")
+        log_error("unexpected_processing_error", 
+                 error_msg, 
+                 ticker=ticker,
+                 exception=e)
+        
+        return {
+            "ticker": ticker,
+            "status": "error",
+            "error": error_msg,
+            "attempts": attempt,
+            "timestamp": timestamp.isoformat()
+        }
+    
+    # This should theoretically never be reached due to the while loop
+    return {
+        "ticker": ticker,
+        "status": "error",
+        "error": "Unexpected end of processing",
+        "attempts": attempt,
+        "timestamp": timestamp.isoformat()
+    }
+    
+    # This should theoretically never be reached due to the while loop
+    return {
+        "ticker": ticker,
+        "status": "error",
+        "error": "Unexpected end of processing",
+        "attempts": attempt,
+        "timestamp": timestamp.isoformat()
+    }
 
 
 def scheduler_job(force: bool = False) -> None:
     """
     Main scheduler job function that runs at scheduled intervals.
-    Focuses only on data fetching, not signal generation.
     
     Args:
         force (bool, optional): Force execution even if market is closed. Defaults to False.
     """
-    # Get current time in market timezone
-    now = datetime.now(pytz.UTC)
-    market_time = now.astimezone(MARKET_TZ)
+    from core.db.deps import get_db
+    from datetime import datetime
+    import pytz
     
-    # Skip if outside market hours and not forced
-    if not force and not is_market_open():
-        log_info("market_closed", "Skipping job - market is closed")
-        return
+    db = None
+    try:
+        # Get current time in market timezone
+        now = datetime.now(pytz.UTC)
+        market_time = now.astimezone(MARKET_TZ)
+        
+        # Skip if outside market hours and not forced
+        if not force and not is_market_open():
+            log_info("market_closed", "Skipping job - market is closed")
+            return
+        
+        # Load tickers
+        tickers = load_tickers()
+        if not tickers:
+            log_warning("no_tickers", "No tickers found to process")
+            return
+        
+        # Process with database context manager
+        with get_db() as db:
+            try:
+                # Show job start
+                display.show_job_start(now, len(tickers))
+            
+                # Track results
+                results = []
+                
+                # Process each ticker (data fetching only)
+                with display.progress_context() as progress:
+                    task = progress.add_task("Processing tickers...", total=len(tickers))
+                    for ticker in tickers:
+                        try:
+                            result = process_ticker(
+                                ticker=ticker,
+                                timestamp=now,
+                                interval="5m",
+                                period="20d"
+                            )
+                            results.append(result)
+                            
+                            # Log individual ticker result
+                            if result and result.get("status") == "success":
+                                log_info("ticker_processed",
+                                       f"Successfully processed {ticker}",
+                                       ticker=ticker,
+                                       additional={
+                                           "records_saved": result.get("records_saved", 0),
+                                           "row_count": result.get("row_count", 0)
+                                       })
+                            
+                        except Exception as e:
+                            error_msg = f"Error processing {ticker}: {str(e)}"
+                            display.console.print(f"[red]{error_msg}[/red]")
+                            log_error("ticker_processing_error",
+                                     error_msg,
+                                     ticker=ticker,
+                                     exception=e)
+                            
+                            results.append({
+                                "ticker": ticker,
+                                "status": "error",
+                                "error": str(e),
+                                "timestamp": now.isoformat()
+                            })
+                        
+                        progress.update(task, advance=1)
+            
+                # Show job results
+                display.show_job_results(results, now)
+                
+                # Calculate success/failure counts
+                success_count = sum(1 for r in results if r and r.get("status") == "success")
+                error_count = len(tickers) - success_count
+                
+                # Log job completion
+                log_info(
+                    "scheduler_job_complete",
+                    f"Completed scheduler job: {success_count} successful, {error_count} failed",
+                    additional={
+                        "total_tickers": len(tickers),
+                        "successful_tickers": success_count,
+                        "failed_count": error_count,
+                        "timestamp": now.isoformat()
+                    }
+                )
+                
+                # Commit the transaction if everything went well
+                db.commit()
+                
+            except Exception as e:
+                # Rollback on error
+                db.rollback()
+                raise
+                
+    except Exception as e:
+        error_msg = f"Error in scheduler job: {str(e)}"
+        display.console.print(f"[red]{error_msg}[/red]")
+        log_error("scheduler_job_error",
+                 error_msg,
+                 exception=e,
+                 additional={"force_mode": force})
     
-    # Load tickers
-    tickers = load_tickers()
-    if not tickers:
-        log_warning("no_tickers", "No tickers found to process")
-        return
-    
-    # Show job start
-    display.show_job_start(now, len(tickers))
-    
-    # Track results
-    results = []
-    
-    # Process each ticker (data fetching only)
-    with display.progress_context() as progress:
-        task = progress.add_task("Processing tickers...", total=len(tickers))
-        for ticker in tickers:
-            result = process_ticker(
-                ticker=ticker,
-                timestamp=now,
-                interval="5m",
-                period="20d"
-            )
-            results.append(result)
-            progress.update(task, advance=1)
-    
-    # Show job results
-    display.show_job_results(results, now)
-    
-    # Log completion
-    success_count = sum(1 for r in results if r.get("status") == "success")
-    total_count = len(results)
-    
-    # Log data fetch completion
-    log_info(
-        "data_fetch_run_complete",
-        f"Completed fetching data for {success_count}/{total_count} tickers",
-        additional={
-            "success_count": success_count,
-            "total_count": total_count
-        }
-    )
-    
-    # Log job completion
-    log_info(
-        "scheduler_job_complete", 
-        f"Completed scheduler job at {datetime.now(pytz.UTC).isoformat()}",
-        additional={
-            "total_tickers": total_count,
-            "successful_tickers": success_count,
-            "failed_count": total_count - success_count,
-            "metadata_file": None
-        }
-    )
+    finally:
+        # Ensure database connection is always closed
+        if 'db' in locals() and db is not None:
+            try:
+                db.close()
+            except Exception as e:
+                log_error("db_close_error",
+                         "Error closing database connection",
+                         exception=e)
+
+
+def countdown_worker(stop_event, scheduler):
+    """Background thread that shows a countdown to the next scheduled job."""
+    while not stop_event.is_set():
+        try:
+            jobs = scheduler.get_jobs()
+            if jobs:
+                next_run = jobs[0].next_run_time
+                if next_run:
+                    display.show_next_update_countdown(next_run)
+            time.sleep(0.1)  # Update 10 times per second
+        except Exception as e:
+            # Log but don't crash on errors in the countdown thread
+            log_error("countdown_error", "Error in countdown thread", exception=e)
+            time.sleep(1)
 
 
 def run_scheduler() -> None:
@@ -611,7 +783,7 @@ def run_scheduler() -> None:
             display.console.print("\n[bold yellow]Shutting down scheduler, please wait...[/bold yellow]")
             
             try:
-                self.scheduler.shutdown(wait=True)
+                self.scheduler.shutdown()
                 display.console.print("[green]✓ Scheduler stopped cleanly[/green]")
             except Exception as e:
                 display.console.print(f"[red]Error during shutdown: {str(e)}[/red]")
@@ -625,21 +797,34 @@ def run_scheduler() -> None:
     signal.signal(SIGINT, shutdown_handler)   # Handle Ctrl+C
     signal.signal(SIGTERM, shutdown_handler)  # Handle systemd/other process managers
     
+    # Create and start the countdown thread
+    stop_event = threading.Event()
+    countdown_thread = threading.Thread(
+        target=countdown_worker,
+        args=(stop_event, scheduler),
+        daemon=True  # Thread will exit when main thread exits
+    )
+    countdown_thread.start()
+    
     try:
         # Show startup message
         display.show_startup_message()
         display.console.print("Running jobs every 1 minute during market hours")
         display.console.print("Press Ctrl+C to stop the scheduler\n")
         
-        # Run the first job immediately
-        scheduler_job()
-        
-        # Run the scheduler
+        # Start the scheduler in a non-blocking way
         scheduler.start()
+        
+    except (KeyboardInterrupt, SystemExit):
+        stop_event.set()
+        countdown_thread.join(timeout=1)
+        raise
         
     except Exception as e:
         display.console.print(f"\n[bold red]Scheduler error: {str(e)}[/bold red]")
         try:
+            stop_event.set()
+            countdown_thread.join(timeout=1)
             scheduler.shutdown()
         except Exception as shutdown_error:
             display.console.print(f"[red]Error during shutdown: {str(shutdown_error)}[/red]")
