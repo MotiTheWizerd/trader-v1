@@ -22,7 +22,7 @@ from rich.progress import (
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 # Import pipeline components
-from core.data.downloader import download_all_tickers
+from core.data.downloader import download_all_tickers, load_tickers
 from core.signals.moving_average import generate_all_ma_signals
 
 # Initialize console
@@ -39,93 +39,86 @@ def run_complete_pipeline(
     peak_threshold: float = 0.99,
     include_reasoning: bool = True
 ) -> bool:
-    """Run the complete trading pipeline: download data and generate signals.
+    """Run the data download pipeline.
     
     Args:
         date: Date in YYYY-MM-DD format (defaults to today)
         interval: Data interval (e.g., '1m', '5m', '1h', '1d')
         period: Period to download (e.g., '1d', '5d', '1mo', '1y')
-        short_window: Short moving average window
-        long_window: Long moving average window
-        confidence_threshold: Minimum confidence threshold for signals (0-1)
-        peak_window: Window size for peak detection
-        peak_threshold: Threshold for peak zone detection (0-1)
-        include_reasoning: Whether to include reasoning in signals
+        short_window: Short moving average window (not used, kept for backward compatibility)
+        long_window: Long moving average window (not used, kept for backward compatibility)
+        confidence_threshold: Minimum confidence threshold for signals (not used, kept for backward compatibility)
+        peak_window: Window size for peak detection (not used, kept for backward compatibility)
+        peak_threshold: Threshold for peak zone detection (not used, kept for backward compatibility)
+        include_reasoning: Whether to include reasoning in signals (not used, kept for backward compatibility)
         
     Returns:
-        bool: True if pipeline completed successfully, False otherwise
+        bool: True if download completed successfully, False otherwise
     """
     # Parse date if provided, otherwise use today
     target_date = datetime.now() if not date else datetime.strptime(date, "%Y-%m-%d")
-    target_date_str = target_date.strftime("%Y%m%d")
     display_date = target_date.strftime("%Y-%m-%d")
     
     try:
-        # Run data download
+        # Create a progress bar for the operation
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
+            BarColumn(bar_width=None),
+            TaskProgressColumn(),
+            TextColumn("•"),
+            TextColumn("({task.completed}/{task.total} tickers)"),
             transient=True,
+            refresh_per_second=10
         ) as progress:
-            task = progress.add_task("Downloading ticker data...", total=None)
+            # Add a task for the download progress
+            overall_task = progress.add_task("[cyan]Downloading ticker data...", total=100)
             
             try:
-                # Download data for all tickers
+                # Download data for all tickers, passing our progress bar
                 console.print(f"[bold blue]Downloading data up to {display_date}...[/bold blue]")
-                download_results = download_all_tickers(
-                    end_date=target_date,  # Use target_date as end_date to get data up to this date
-                    interval=interval,
-                    period=period
+                
+                # Create a task for the download progress
+                download_task = progress.add_task(
+                    "[green]Downloading tickers...",
+                    total=len(load_tickers())  # We know the total number of tickers
                 )
+                
+                # Download with progress updates
+                download_results = download_all_tickers(
+                    end_date=target_date,  # Use target_date as end_date
+                    interval=interval,
+                    period=period,
+                    progress=progress,
+                    task_id=download_task
+                )
+                
+                # Remove the download task
+                progress.remove_task(download_task)
                 
                 if not download_results:
                     console.print("[red]✗ No data was downloaded![/red]")
                     return False
-                    
-                console.print(f"[green]✓ Downloaded data for {len(download_results)} tickers[/green]")
+                
+                # Count successful downloads
+                success_count = sum(1 for result in download_results.values() if sum(result) > 0)
+                console.print(f"[green]✓ Successfully downloaded data for {success_count} out of {len(download_results)} tickers[/green]")
+                
+                if success_count == 0:
+                    console.print("[yellow]⚠ No new data was downloaded![/yellow]")
+                    return False
+                
+                # Update overall progress to 100%
+                progress.update(overall_task, completed=100, description="[green]✓ Download completed![/green]")
+                
+                return True
                 
             except Exception as e:
                 console.print(f"[red]✗ Error during download: {str(e)}[/red]")
                 return False
-                
-            progress.update(task, description="Generating signals...")
             
-            # Generate signals
-            try:
-                console.print("\n[bold blue]Generating trading signals...[/bold blue]")
-                
-                signals_results = generate_all_ma_signals(
-                    date=target_date_str,  # Use the target date in YYYYMMDD format for file names
-                    short_window=short_window,
-                    long_window=long_window,
-                    confidence_threshold=confidence_threshold,
-                    peak_window=peak_window,
-                    peak_threshold=peak_threshold,
-                    include_reasoning=include_reasoning
-                )
-                
-                if not signals_results:
-                    console.print("[yellow]⚠ No signals were generated![/yellow]")
-                    return False
-                    
-                # Count successful signal generations
-                success_count = sum(1 for path in signals_results.values() if path is not None)
-                console.print(f"[green]✓ Successfully generated signals for {success_count} out of {len(signals_results)} tickers[/green]")
-                
-                if success_count == 0:
-                    console.print("[red]✗ No valid signals were generated![/red]")
-                    return False
-                    
-                progress.update(task, completed=1, description="[green]✓ Pipeline completed![/green]")
-                
-            except Exception as e:
-                console.print(f"[red]✗ Error during signal generation: {str(e)}[/red]")
-                return False
-            
-        return True
-        
     except Exception as e:
-        console.print(f"[red]Error in pipeline: {str(e)}[/red]")
+        console.print(f"[red]Error in download pipeline: {str(e)}[/red]")
         return False
 
 def get_pipeline_status() -> Dict[str, Any]:

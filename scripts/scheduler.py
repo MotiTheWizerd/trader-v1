@@ -20,13 +20,24 @@ Features:
 - Optimized data downloads (full history for new tickers, incremental for existing)
 - Retry logic for network failures
 - Rich terminal UI with progress indicators
+- Graceful shutdown handling with Ctrl+C
 """
 import json
 import os
+import signal
 import sys
+from datetime import datetime, timedelta
+from pathlib import Path
+from signal import SIGINT, SIGTERM
+from typing import Any, Dict, List, Optional, Tuple
+
+# Add project root to Python path
+project_root = str(Path(__file__).parent.parent)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 import time
 from datetime import datetime, time as dt_time, timedelta
-from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union, Any
 
 # Import pytz for timezone handling
@@ -217,41 +228,37 @@ def get_next_market_open(start_date: datetime) -> datetime:
 def download_and_save_snapshot(
     ticker: str,
     timestamp: datetime,
-    interval: str = "5m",
-    period: str = "20d"
-) -> Optional[str]:
+    interval: str = "1m",
+    period: str = None  # Kept for backward compatibility, not used
+) -> Optional[Dict[str, Any]]:
     """
-    Download and save a snapshot of ticker data with timestamp in filename.
+    Download and save only new ticker data to the database.
     
     Args:
         ticker (str): Ticker symbol
         timestamp (datetime): Current timestamp for the snapshot
-        interval (str): Data interval (e.g., "5m")
-        period (str): Period to download (e.g., "20d")
+        interval (str): Data interval (e.g., "1m")
+        period (str): Kept for backward compatibility, not used
         
     Returns:
-        Optional[str]: Path to the saved file or None if failed
+        Optional[Dict[str, Any]]: Dictionary with download results or None if failed
+        
+    Note:
+        This function will only download data that is newer than the most recent
+        record in the database for the given ticker. For the first run, it will
+        fetch the last day of data.
     """
     try:
-        # Check if this is a new ticker or an existing one
-        is_new_ticker = len(list(TICKER_DATA_DIR.glob(f"{ticker}/*.csv"))) == 0
-        
-        # For new tickers, download full history (20d)
-        # For existing tickers, only get the latest 5 minutes
-        actual_period = period if is_new_ticker else "5m"
+        from core.db.deps import get_db
+        from core.db.crud.tickers_data_db import save_ticker_data
         
         # Log what we're doing
-        if is_new_ticker:
-            display.console.print(f"[blue]New ticker {ticker}: Downloading full {period} history...[/blue]")
-            log_info("download_start", f"Downloading full history for new ticker {ticker}", ticker=ticker, 
-                    additional={"interval": interval, "period": period, "is_new_ticker": True})
-        else:
-            display.console.print(f"[blue]Existing ticker {ticker}: Downloading latest data...[/blue]")
-            log_info("download_start", f"Downloading latest data for existing ticker {ticker}", ticker=ticker, 
-                    additional={"interval": interval, "period": actual_period, "is_new_ticker": False})
+        display.console.print(f"[blue]Downloading {ticker} data...[/blue]")
+        log_info("download_start", f"Downloading data for ticker {ticker}", ticker=ticker, 
+                additional={"interval": interval, "period": period})
         
-        # Download data with appropriate period
-        df = download_ticker_data(ticker, interval=interval, period=actual_period)
+        # Download data
+        df = download_ticker_data(ticker, interval=interval, period=period)
         
         if df is None or df.empty:
             error_msg = f"No data available for {ticker}"
@@ -259,21 +266,24 @@ def download_and_save_snapshot(
             log_warning("download_empty", error_msg, ticker=ticker)
             return None
         
-        # Format timestamp for filename
-        timestamp_str = timestamp.strftime("%Y%m%d_%H%M")
+        # Save to database
+        with get_db() as db:
+            saved_count = save_ticker_data(db, ticker, df)
         
-        # Get the output file path using the configuration
-        output_file = get_ticker_data_path(ticker, timestamp_str)
-        
-        # Save to file
-        df.to_csv(output_file)
-        
-        success_msg = f"Saved {ticker} data to {output_file}"
+        success_msg = f"Saved {saved_count} records for {ticker} to database"
         display.console.print(f"[green]{success_msg}[/green]")
         log_info("download_complete", success_msg, ticker=ticker, 
-                additional={"filepath": str(filepath), "rows": len(df)})
+                additional={"records_saved": saved_count})
         
-        return str(filepath)
+        # Get the number of rows in the DataFrame
+        row_count = len(df) if df is not None else 0
+        
+        return {
+            "ticker": ticker,
+            "records_saved": saved_count,
+            "row_count": row_count,  # Add row count to the result
+            "timestamp": timestamp.isoformat()
+        }
         
     except Exception as e:
         error_msg = f"Error downloading {ticker}: {str(e)}"
@@ -284,21 +294,18 @@ def download_and_save_snapshot(
 
 def generate_and_save_signals(
     ticker: str,
-    data_file: str,
     timestamp: datetime,
     short_window: int = 5,
     long_window: int = 20,
     confidence_threshold: float = 0.005,
     peak_window: int = 12,
     peak_threshold: float = 0.99
-) -> Optional[str]:
+) -> Optional[Dict[str, Any]]:
     """
-    Generate signals from a data snapshot and save with timestamp in filename.
-    Uses the core signal generation pipeline.
+    Generate signals from database data and save to the database.
     
     Args:
         ticker (str): Ticker symbol
-        data_file (str): Path to the data file
         timestamp (datetime): Current timestamp
         short_window (int): Short moving average window
         long_window (int): Long moving average window
@@ -307,226 +314,177 @@ def generate_and_save_signals(
         peak_threshold (float): Threshold for peak zone detection
         
     Returns:
-        Optional[str]: Path to the saved signals file or None if failed
+        Optional[Dict[str, Any]]: Dictionary with signal generation results or None if failed
     """
     try:
-        # Load data
+        from core.db.deps import get_db
+        from core.db.crud.tickers_data_db import get_prices_for_ticker
+        from core.db.crud.tickers_signals_db import save_signals_batch
+        from core.signals.moving_average import generate_ma_signals
+        
         display.console.print(f"[blue]Generating signals for {ticker}...[/blue]")
-        log_info("signal_generation_start", f"Generating signals for {ticker}", ticker=ticker,
-                additional={"data_file": data_file, "short_window": short_window, "long_window": long_window})
+        log_info("signal_generation_start", f"Generating signals for {ticker}", ticker=ticker)
         
-        df = pd.read_csv(data_file, index_col=0, parse_dates=True)
-        
-        if df is None or df.empty:
-            error_msg = f"No data available in file {data_file}"
-            display.console.print(f"[red]{error_msg}[/red]")
-            log_warning("signal_data_empty", error_msg, ticker=ticker)
-            return None
-        
-        # Format timestamp for filename
-        timestamp_str = timestamp.strftime("%Y%m%d_%H%M")
-        date_only_str = timestamp.strftime("%Y%m%d")
-        
-        # Ensure the signals directory exists
-        signals_dir = SIGNALS_DIR / ticker
-        os.makedirs(signals_dir, exist_ok=True)
-        
-        # Get the data directory path (parent of ticker directory)
-        data_file_path = Path(data_file)
-        ticker_dir = data_file_path.parent
-        data_dir = ticker_dir.parent  # This is the parent directory containing all ticker directories
-        
-        try:
-            # Use the core signal generation function
-            # Pass the data directory and let generate_ma_signals handle the file paths
-            output_file = generate_ma_signals(
-                ticker=ticker,
-                date=date_only_str,  # Use the date string format YYYYMMDD
-                short_window=short_window,
-                long_window=long_window,
-                data_dir=data_dir,  # Pass the data directory
-                include_reasoning=True,
-                confidence_threshold=confidence_threshold,
-                peak_window=peak_window,
-                peak_threshold=peak_threshold,
-                progress=None  # No progress bar needed here
-            )
+        # Get data from database
+        with get_db() as db:
+            prices = get_prices_for_ticker(db, ticker)
             
-            # The output file from generate_ma_signals will be in the signals directory
-            # with format tickers/signals/TICKER/YYYYMMDD_signals.csv
-            # We also want to create our timestamped version for the scheduler
-            source_file = Path(output_file)
-            
-            if source_file.exists():
-                # Read the signals file
-                signals_df = pd.read_csv(source_file)
-                
-                # Get signal counts for display
-                buy_count = signals_df["signal"].value_counts().get("BUY", 0)
-                sell_count = signals_df["signal"].value_counts().get("SELL", 0)
-                stay_count = signals_df["signal"].value_counts().get("STAY", 0)
-                
-                # Display signal counts
-                display.console.print(
-                    f"[green]Generated signals for {ticker}: "
-                    f"[bold blue]BUY: {buy_count}[/bold blue], "
-                    f"[bold red]SELL: {sell_count}[/bold red], "
-                    f"[bold yellow]STAY: {stay_count}[/bold yellow][/green]"
-                )
-                
-                # Create our timestamped version for the scheduler
-                scheduler_file = signals_dir / f"{timestamp_str}_signals.csv"
-                signals_df.to_csv(scheduler_file)
-                
-                # Log signal generation completion
-                log_info("signal_generation_complete", f"Generated signals for {ticker}", ticker=ticker,
-                        additional={
-                            "filepath": str(scheduler_file),
-                            "buy_count": buy_count,
-                            "sell_count": sell_count,
-                            "stay_count": stay_count,
-                            "total_signals": len(signals_df)
-                        })
-                
-                return str(scheduler_file)
-            else:
-                error_msg = f"No signals generated for {ticker}"
-                display.console.print(f"[red]{error_msg}[/red]")
-                log_warning("signal_result_empty", error_msg, ticker=ticker)
+            if not prices:
+                error_msg = f"No price data found for {ticker} in database"
+                display.console.print(f"[yellow]{error_msg}[/yellow]")
+                log_warning("no_price_data", error_msg, ticker=ticker)
                 return None
                 
-        finally:
-            # Clean up the temporary file
-            if temp_file_path.exists():
-                try:
-                    os.remove(temp_file_path)
-                except:
-                    pass
-    
+            # Convert to DataFrame
+            data = []
+            for p in prices:
+                data.append({
+                    'timestamp': p.timestamp,
+                    'open': p.open,
+                    'high': p.high,
+                    'low': p.low,
+                    'close': p.close,
+                    'volume': p.volume,
+                    'ticker': ticker
+                })
+            
+            df = pd.DataFrame(data)
+            
+            # Ensure timestamp is timezone-naive
+            if not df.empty and 'timestamp' in df.columns:
+                df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_localize(None)
+        
+        # Generate signals
+        signals = generate_ma_signals(
+            ticker=ticker,
+            date=timestamp,
+            short_window=short_window,
+            long_window=long_window,
+            confidence_threshold=confidence_threshold,
+            peak_window=peak_window,
+            peak_threshold=peak_threshold,
+            df=df  # Pass the DataFrame directly
+        )
+        
+        if signals is None or signals.empty:
+            error_msg = f"No signals generated for {ticker}"
+            display.console.print(f"[yellow]{error_msg}[/yellow]")
+            log_warning("no_signals", error_msg, ticker=ticker)
+            return None
+        
+        # Save signals to database
+        signals_list = []
+        for _, row in signals.iterrows():
+            signals_list.append({
+                'ticker': ticker,
+                'timestamp': row['timestamp'],
+                'signal': row['signal'],
+                'confidence': float(row.get('confidence', 0.0)),
+                'reasoning': str(row.get('reasoning', '')),
+                'created_at': datetime.utcnow()
+            })
+        
+        with get_db() as db:
+            saved_count = save_signals_batch(db, signals_list)
+        
+        # Get signal counts for display
+        buy_count = signals["signal"].value_counts().get("BUY", 0)
+        sell_count = signals["signal"].value_counts().get("SELL", 0)
+        stay_count = signals["signal"].value_counts().get("STAY", 0)
+        
+        # Display signal counts
+        display.console.print(
+            f"[green]Generated signals for {ticker}: "
+            f"[bold blue]BUY: {buy_count}[/bold blue], "
+            f"[bold red]SELL: {sell_count}[/bold red], "
+            f"[bold yellow]STAY: {stay_count}[/bold yellow][/green]"
+        )
+        
+        # Log signal generation completion
+        success_msg = f"Saved {saved_count} signals for {ticker} to database"
+        display.console.print(f"[green]{success_msg}[/green]")
+        log_info("signals_saved", success_msg, ticker=ticker, 
+                additional={
+                    "signal_count": saved_count,
+                    "buy_count": buy_count,
+                    "sell_count": sell_count,
+                    "stay_count": stay_count
+                })
+        
+        return {
+            'ticker': ticker,
+            'signal_count': saved_count,
+            'buy_count': buy_count,
+            'sell_count': sell_count,
+            'stay_count': stay_count,
+            'timestamp': timestamp.isoformat()
+        }
+        
     except Exception as e:
         error_msg = f"Error generating signals for {ticker}: {str(e)}"
         display.console.print(f"[red]{error_msg}[/red]")
-        log_error("signal_generation_failed", error_msg, ticker=ticker, exception=e)
+        log_error("signal_generation_failed", error_msg, ticker=ticker, exception=e, exc_info=True)
         return None
 
 
 def process_ticker(
     ticker: str,
     timestamp: datetime,
-    interval: str = DEFAULT_INTERVAL,
-    period: str = DEFAULT_PERIOD,
-    short_window: int = 5,
-    long_window: int = 20,
-    confidence_threshold: float = 0.005,
-    peak_window: int = 12,
-    peak_threshold: float = 0.99,
+    interval: str = "5m",
+    period: str = "20d",
     retry_count: int = 3,
     retry_delay: int = 2
 ) -> Dict[str, Any]:
     """
-    Process a single ticker: download data, generate signals, and save results.
+    Process a single ticker: download and save price data.
     
     Args:
         ticker (str): Ticker symbol
         timestamp (datetime): Current timestamp
         interval (str): Data interval
         period (str): Period to download
-        short_window (int): Short-term moving average window
-        long_window (int): Long-term moving average window
-        confidence_threshold (float): Minimum confidence for signals
-        peak_window (int): Window for peak detection
-        peak_threshold (float): Threshold for peak zone detection
         retry_count (int): Number of retries for API failures
         retry_delay (int): Delay in seconds between retries
         
     Returns:
-        Dict[str, Any]: Dictionary with data and signal file paths
+        Dict[str, Any]: Dictionary with data file path and status
     """
+    # Initialize result dictionary with expected fields for display
     result = {
         "ticker": ticker,
-        "timestamp": timestamp,
-        "status": "failed",
+        "status": "failed",  # Will be updated to "success" if successful
+        "attempts": 1,       # Default to 1 attempt
         "data_file": None,
-        "signal_file": None,
+        "signal_file": None,  # Keep for compatibility with display
         "error": None
     }
     
-    # Skip empty ticker entries
-    if not ticker or ticker.strip() == "":
-        return result
-    
-    # Implement retry logic
-    for attempt in range(retry_count):
-        result["attempts"] += 1
-        try:
-            # Download and save data snapshot
-            data_file = download_and_save_snapshot(
-                ticker=ticker,
-                timestamp=timestamp,
-                interval=interval,
-                period=period
-            )
-            
-            if not data_file:
-                if attempt < retry_count - 1:
-                    retry_msg = f"Retrying download for {ticker} (attempt {attempt + 2}/{retry_count})"
-                    display.console.print(f"[yellow]{retry_msg}[/yellow]")
-                    log_warning("download_retry", retry_msg, ticker=ticker, 
-                              additional={"attempt": attempt + 2, "max_attempts": retry_count})
-                    time.sleep(retry_delay)  # Add delay between retries
-                    continue
-                return result
-            
-            result["data_file"] = data_file
-            
-            # Generate and save signals
-            signal_file = generate_and_save_signals(
-                ticker=ticker,
-                data_file=data_file,
-                timestamp=timestamp,
-                short_window=short_window,
-                long_window=long_window,
-                confidence_threshold=confidence_threshold,
-                peak_window=peak_window,
-                peak_threshold=peak_threshold
-            )
-            
-            if not signal_file:
-                if attempt < retry_count - 1:
-                    retry_msg = f"Retrying signal generation for {ticker} (attempt {attempt + 2}/{retry_count})"
-                    display.console.print(f"[yellow]{retry_msg}[/yellow]")
-                    log_warning("signal_generation_retry", retry_msg, ticker=ticker,
-                              additional={"attempt": attempt + 2, "max_attempts": retry_count})
-                    time.sleep(retry_delay)  # Add delay between retries
-                    continue
-                return result
-            
-            result["signal_file"] = signal_file
-            result["status"] = "success"
-            
-            # Log successful processing
-            log_info("process_ticker_success", f"Successfully processed ticker {ticker}", ticker=ticker,
-                    additional={
-                        "data_file": data_file,
-                        "signal_file": signal_file,
-                        "attempts_needed": attempt + 1
-                    })
-            
-            # If we got here, we succeeded, so break the retry loop
-            break
+    try:
+        # Download and save data
+        data_result = download_and_save_snapshot(
+            ticker=ticker,
+            timestamp=timestamp,
+            interval=interval,
+            period=period
+        )
         
-        except Exception as e:
-            if attempt < retry_count - 1:
-                retry_msg = f"Error processing {ticker}, retrying (attempt {attempt + 2}/{retry_count}): {str(e)}"
-                display.console.print(f"[yellow]{retry_msg}[/yellow]")
-                log_warning("process_ticker_retry", retry_msg, ticker=ticker, exception=e,
-                          additional={"attempt": attempt + 2, "max_attempts": retry_count})
-                time.sleep(retry_delay)  # Add delay between retries
-            else:
-                error_msg = f"Failed to process {ticker} after {retry_count} attempts: {str(e)}"
-                display.show_ticker_error(ticker, e)
-                log_error("process_ticker_failed", error_msg, ticker=ticker, exception=e)
-                result["error"] = str(e)
+        if not data_result or "error" in data_result:
+            error_msg = data_result.get("error", "Unknown error downloading data") if data_result else "No data returned"
+            result["error"] = error_msg
+            return result
+            
+        # Update result for successful download
+        result.update({
+            "status": "success",
+            "data_file": data_result.get("data_file"),
+            "row_count": data_result.get("row_count", 0),  # Add row count to result
+            "records_saved": data_result.get("records_saved", 0)  # Also include records_saved for completeness
+        })
+        
+    except Exception as e:
+        error_msg = f"Error processing {ticker}: {str(e)}"
+        log_error("ticker_processing_error", error_msg, ticker=ticker, error=str(e))
+        result["error"] = error_msg
     
     return result
 
@@ -534,112 +492,158 @@ def process_ticker(
 def scheduler_job(force: bool = False) -> None:
     """
     Main scheduler job function that runs at scheduled intervals.
+    Focuses only on data fetching, not signal generation.
     
     Args:
         force (bool, optional): Force execution even if market is closed. Defaults to False.
     """
-    # Get current timestamp
-    now = datetime.now()
+    # Get current time in market timezone
+    now = datetime.now(pytz.UTC)
+    market_time = now.astimezone(MARKET_TZ)
     
-    # Log job start
-    log_info("scheduler_job_start", f"Starting scheduler job at {now.isoformat()}", 
-            additional={"force": force})
-    
-    # Check if market is open
-    is_open, next_open = is_market_open()
-    
-    if not is_open and not force:
-        market_closed_msg = f"Market closed. Next open: {next_open.isoformat()}"
-        display.show_market_closed(now, next_open)
-        log_info("market_closed", market_closed_msg, 
-                additional={"next_open": next_open.isoformat()})
+    # Skip if outside market hours and not forced
+    if not force and not is_market_open():
+        log_info("market_closed", "Skipping job - market is closed")
         return
-    
-    # Ensure directories exist
-    ensure_directories()
     
     # Load tickers
     tickers = load_tickers()
+    if not tickers:
+        log_warning("no_tickers", "No tickers found to process")
+        return
     
-    # Show job start message
+    # Show job start
     display.show_job_start(now, len(tickers))
-    log_info("processing_tickers", f"Processing {len(tickers)} tickers", 
-            additional={"ticker_count": len(tickers), "tickers": tickers})
     
-    # Process each ticker
+    # Track results
     results = []
     
+    # Process each ticker (data fetching only)
     with display.progress_context() as progress:
         task = progress.add_task("Processing tickers...", total=len(tickers))
-        
         for ticker in tickers:
-            result = process_ticker(ticker, now)
+            result = process_ticker(
+                ticker=ticker,
+                timestamp=now,
+                interval="5m",
+                period="20d"
+            )
             results.append(result)
             progress.update(task, advance=1)
-    
-    # Save signal metadata
-    metadata_file = save_signal_metadata(results, now)
     
     # Show job results
     display.show_job_results(results, now)
     
-    # Display signal summary
-    display_signal_summary(metadata_file, display.console)
+    # Log completion
+    success_count = sum(1 for r in results if r.get("status") == "success")
+    total_count = len(results)
+    
+    # Log data fetch completion
+    log_info(
+        "data_fetch_run_complete",
+        f"Completed fetching data for {success_count}/{total_count} tickers",
+        additional={
+            "success_count": success_count,
+            "total_count": total_count
+        }
+    )
     
     # Log job completion
-    success_count = sum(1 for r in results if r["status"] == "success")
-    failed_count = len(results) - success_count
-    
-    log_info("scheduler_job_complete", f"Completed scheduler job at {datetime.now().isoformat()}", 
-            additional={
-                "total_tickers": len(results),
-                "success_count": success_count,
-                "failed_count": failed_count,
-                "metadata_file": metadata_file if metadata_file else None
-            })
+    log_info(
+        "scheduler_job_complete", 
+        f"Completed scheduler job at {datetime.now(pytz.UTC).isoformat()}",
+        additional={
+            "total_tickers": total_count,
+            "successful_tickers": success_count,
+            "failed_count": total_count - success_count,
+            "metadata_file": None
+        }
+    )
 
 
 def run_scheduler() -> None:
     """
-    Run the scheduler with a job that executes every 5 minutes.
+    Run the scheduler with a job that executes every minute.
+    Handles graceful shutdown on keyboard interrupt.
     """
     # Ensure all directories exist
     ensure_directories()
     
-    # Log scheduler startup
+    # Initialize logging
     log_info("scheduler_startup", "Starting trading signal scheduler")
     
-    # Create scheduler
-    scheduler = BlockingScheduler()
+    # Configure scheduler
+    scheduler = BlockingScheduler(timezone=str(MARKET_TZ))
     
-    # Add job to run every 5 minutes
+    # Add job to run every minute during market hours
     scheduler.add_job(
         scheduler_job,
-        trigger=CronTrigger(minute='*/5'),  # Run every 5 minutes
-        id='trading_signal_job',
-        name='Trading Signal Job',
-        replace_existing=True
+        'cron',
+        minute='*',  # Every minute
+        timezone=MARKET_TZ,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=300  # 5 minutes grace period
     )
     
-    # Show startup message
-    display.show_startup_message()
+    # Run the first job immediately
+    scheduler.add_job(
+        scheduler_job,
+        'date',
+        run_date=datetime.now(pytz.UTC) + timedelta(seconds=2),  # Small delay to ensure scheduler is ready
+        timezone=MARKET_TZ
+    )
     
-    # Run the scheduler
+    class SchedulerShutdownHandler:
+        """Handle graceful shutdown of the scheduler."""
+        def __init__(self, sched):
+            self.is_shutting_down = False
+            self.scheduler = sched
+        
+        def __call__(self, signum, frame):
+            """Handle shutdown signals gracefully."""
+            if self.is_shutting_down:
+                # Force exit if we get a second interrupt
+                display.console.print("\n[bold red]Force shutdown requested...[/bold red]")
+                sys.exit(1)
+                
+            self.is_shutting_down = True
+            display.console.print("\n[bold yellow]Shutting down scheduler, please wait...[/bold yellow]")
+            
+            try:
+                self.scheduler.shutdown(wait=True)
+                display.console.print("[green]✓ Scheduler stopped cleanly[/green]")
+            except Exception as e:
+                display.console.print(f"[red]Error during shutdown: {str(e)}[/red]")
+            
+            sys.exit(0)
+    
+    # Create shutdown handler instance with scheduler reference
+    shutdown_handler = SchedulerShutdownHandler(scheduler)
+    
+    # Register signal handlers
+    signal.signal(SIGINT, shutdown_handler)   # Handle Ctrl+C
+    signal.signal(SIGTERM, shutdown_handler)  # Handle systemd/other process managers
+    
     try:
-        # Run the job once immediately
+        # Show startup message
+        display.show_startup_message()
+        display.console.print("Running jobs every 1 minute during market hours")
+        display.console.print("Press Ctrl+C to stop the scheduler\n")
+        
+        # Run the first job immediately
         scheduler_job()
         
-        # Start the scheduler
+        # Run the scheduler
         scheduler.start()
-    except KeyboardInterrupt:
-        shutdown_msg = "Scheduler stopped by user"
-        display.console.print(f"[bold red]{shutdown_msg}[/bold red]")
-        log_info("scheduler_shutdown", shutdown_msg)
+        
     except Exception as e:
-        error_msg = f"Scheduler error: {str(e)}"
-        display.show_error(error_msg)
-        log_error("scheduler_error", error_msg, exception=e)
-
+        display.console.print(f"\n[bold red]Scheduler error: {str(e)}[/bold red]")
+        try:
+            scheduler.shutdown()
+        except Exception as shutdown_error:
+            display.console.print(f"[red]Error during shutdown: {str(shutdown_error)}[/red]")
+        raise
 
 if __name__ == "__main__":
     run_scheduler()

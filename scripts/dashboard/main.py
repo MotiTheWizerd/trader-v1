@@ -39,7 +39,7 @@ def show_menu():
     
     # Add menu items
     menu_items = [
-        ("1. Clean Data", "clean-data", "Remove all files from tickers/data"),
+        ("1. Clear Database", "clean-data", "Remove all data from tickers_data and tickers_signals tables"),
         ("2. Run Complete Pipeline", "run-pipeline", "Download data and generate signals"),
         ("3. Regenerate Signals", "regenerate-signals --interactive", "Regenerate signals with different settings"),
         ("4. Exit", "exit", "Exit the dashboard")
@@ -59,7 +59,13 @@ def dashboard():
         choice = input("\nEnter your choice (or 'exit' to quit): ").strip().lower()
         
         if choice in ['1', 'clean-data']:
-            clean_data()
+            result = clean_data()
+            if result is None:  # User cancelled
+                pass  # clean_data already showed a message
+            elif result:  # Success
+                console.print("\n[green]✓ Database cleared successfully![/green]")
+            else:  # Error
+                console.print("\n[red]✗ Failed to clear database. Check logs for details.[/red]")
         elif choice in ['2', 'run-pipeline']:
             console.print("\n[bold blue]Running complete pipeline...[/bold blue]")
             success = run_complete_pipeline()

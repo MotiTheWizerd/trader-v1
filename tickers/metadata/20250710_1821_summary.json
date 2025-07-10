@@ -1,0 +1,24 @@
+{
+  "timestamp": "20250710_1821",
+  "datetime": "2025-07-10 18:21:00",
+  "signal_counts": {
+    "BUY": 0,
+    "SELL": 0,
+    "STAY": 0,
+    "ERROR": 6
+  },
+  "total_tickers": 6,
+  "successful_tickers": 0,
+  "failed_tickers": 6,
+  "tickers": {
+    "success": [],
+    "failed": [
+      "AAPL",
+      "TSLA",
+      "NVDA",
+      "AMZN",
+      "META",
+      "NFLX"
+    ]
+  }
+}

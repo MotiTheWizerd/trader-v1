@@ -28,7 +28,7 @@ from datetime import datetime, timedelta
 import logging
 
 # Rich progress bar
-from rich.progress import Progress, TaskProgressColumn, TimeRemainingColumn, TextColumn, BarColumn
+from rich.progress import Progress, TaskProgressColumn, TimeRemainingColumn, TextColumn, BarColumn, SpinnerColumn
 
 # Import logger configuration
 import logging
@@ -63,8 +63,9 @@ def generate_ma_signals(
     peak_window: int = 12,
     peak_threshold: float = 0.99,
     progress: Optional[Progress] = None,
-    task_id: Optional[int] = None
-) -> Optional[str]:
+    task_id: Optional[int] = None,
+    df: Optional[pd.DataFrame] = None
+) -> pd.DataFrame:
     """
     Generate moving average signals from OHLCV data using dynamic confidence thresholds.
     
@@ -89,15 +90,91 @@ def generate_ma_signals(
         peak_threshold (float): Threshold for peak detection (0-1)
         progress (Optional[Progress]): Rich progress bar instance
         task_id (Optional[int]): Task ID for progress tracking
+        df (Optional[pd.DataFrame]): Optional DataFrame with price data
     
     Returns:
-        Optional[str]: Path to the saved signals file, or None if generation failed
+        pd.DataFrame: DataFrame containing the generated signals
     """
     # Only show debug info if we're not using a progress bar
-    if progress is None:
+    if progress is None or task_id is None:
         console.print(f"\n[yellow]=== Processing {ticker} ===[/yellow]")
+    elif progress is not None and task_id is not None:
+        progress.update(task_id, description=f"Processing {ticker}")
     
-    # Handle date formatting - accept both datetime and string in YYYYMMDD or YYYYMMDDHHMM format
+    # If no DataFrame provided, try to get data from database
+    if df is None:
+        try:
+            if progress is not None and task_id is not None:
+                progress.update(task_id, description=f"Fetching data for {ticker}")
+            
+            from core.db.deps import get_db
+            from core.db.crud.tickers_data_db import get_prices_for_ticker
+            
+            try:
+                with get_db() as db:
+                    prices = get_prices_for_ticker(db, ticker)
+                    if not prices:
+                        msg = f"No price data found for {ticker} in database"
+                        logger.warning(msg)
+                        if progress is not None and task_id is not None:
+                            progress.print(f"[yellow]{msg}[/yellow]")
+                        return pd.DataFrame()
+                        
+                    # Convert to DataFrame
+                    if progress is not None and task_id is not None:
+                        progress.update(task_id, description=f"Processing {ticker} data")
+                    
+                    # Create DataFrame from prices
+                    data = []
+                    for p in prices:
+                        data.append({
+                            'timestamp': p.timestamp,
+                            'open': p.open,
+                            'high': p.high,
+                            'low': p.low,
+                            'close': p.close,
+                            'volume': p.volume,
+                            'ticker': ticker
+                        })
+                    
+                    df = pd.DataFrame(data)
+                    
+                    # Ensure timestamp is timezone-naive
+                    if not df.empty and 'timestamp' in df.columns:
+                        df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_localize(None)
+            
+            except Exception as e:
+                error_msg = f"Database error for {ticker}: {str(e)}"
+                logger.error(error_msg, exc_info=True)
+                if progress is not None and task_id is not None:
+                    progress.print(f"[red]{error_msg}[/red]")
+                return pd.DataFrame()
+                
+        except Exception as e:
+            error_msg = f"Error fetching price data for {ticker}: {str(e)}"
+            logger.error(error_msg)
+            if progress is not None and task_id is not None:
+                progress.print(f"[red]{error_msg}[/red]")
+            return pd.DataFrame()
+    
+    if df is None or df.empty:
+        logger.warning(f"No data available for {ticker}")
+        return pd.DataFrame()
+    
+    # Ensure we have the required columns
+    required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    if missing_columns:
+        error_msg = f"Missing required columns in data for {ticker}: {', '.join(missing_columns)}"
+        logger.error(error_msg)
+        if progress is not None and task_id is not None:
+            progress.print(f"[red]{error_msg}[/red]")
+        return pd.DataFrame()
+    
+    if progress is not None and task_id is not None:
+        progress.update(task_id, description=f"Generating signals for {ticker}")
+    
+    # Handle date filtering if date parameter is provided
     if date is None:
         date_str = datetime.now().strftime("%Y%m%d%H%M")
     elif isinstance(date, datetime):
@@ -113,13 +190,45 @@ def generate_ma_signals(
         # Take first 12 characters (YYYYMMDDHHMM) if longer
         date_str = date_str[:12]
     
-    # Initialize the _is_new_data column early to prevent KeyError
-    df = load_historical_data(ticker)
+    # Only load historical data if no DataFrame was provided
     if df is None or df.empty:
-        logger.error(f"No historical data found for {ticker}")
-        return None
+        try:
+            from core.db.deps import get_db
+            with get_db() as db:
+                prices = get_prices_for_ticker(db, ticker)
+                if not prices:
+                    logger.error(f"No historical data found for {ticker} in database")
+                    return pd.DataFrame()
+                
+                # Convert to DataFrame
+                data = []
+                for p in prices:
+                    data.append({
+                        'timestamp': p.timestamp,
+                        'open': p.open,
+                        'high': p.high,
+                        'low': p.low,
+                        'close': p.close,
+                        'volume': p.volume,
+                        'ticker': ticker
+                    })
+                
+                df = pd.DataFrame(data)
+                
+                # Ensure timestamp is timezone-naive
+                if not df.empty and 'timestamp' in df.columns:
+                    df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_localize(None)
+                    
+        except Exception as e:
+            logger.error(f"Error loading historical data for {ticker}: {str(e)}", exc_info=True)
+            return pd.DataFrame()
+            
+        if df is None or df.empty:
+            logger.error(f"No historical data found for {ticker}")
+            return pd.DataFrame()
     
     # Initialize _is_new_data as True for all rows by default
+    df = df.copy()  # Create a copy to avoid modifying the input DataFrame
     df['_is_new_data'] = True
         
     # Try to find existing signals to determine which data is new
@@ -128,22 +237,29 @@ def generate_ma_signals(
     latest_signal_file = None
     
     if signal_files:
+        latest_signal_file = None
         try:
             # Find the most recent signal file
             latest_signal_file = max(signal_files, key=lambda x: x.stat().st_mtime)
             # Read the last timestamp from the signal file
-            existing_signals = pd.read_csv(latest_signal_file)
-            if 'timestamp' in existing_signals.columns and not existing_signals.empty:
-                last_timestamp = pd.to_datetime(existing_signals['timestamp'].iloc[-1])
-                # Update _is_new_data based on timestamp comparison
-                df['_is_new_data'] = (df.index > last_timestamp)
-                if not df['_is_new_data'].any():
-                    logger.info(f"No new data to process for {ticker} since last run")
-                    return str(latest_signal_file)  # Return existing file if no new data
+            last_signals = pd.read_csv(latest_signal_file)
+            if not last_signals.empty and 'timestamp' in last_signals.columns:
+                last_timestamp = pd.to_datetime(last_signals['timestamp']).max()
+                logger.info(f"Found existing signal file with last timestamp: {last_timestamp}")
+                
+                # Filter data to only include new data points
+                df = df[df['timestamp'] > last_timestamp]
+                
+                if df.empty:
+                    logger.info(f"No new data points since last signal generation for {ticker}")
+                    return pd.DataFrame()
         except Exception as e:
-            logger.warning(f"Error reading existing signals for {ticker}: {e}")
-            # If there's an error, process all data as new
+            logger.warning(f"Error reading existing signal file: {str(e)}")
+            # Continue with full data if there's an error reading the file
             df['_is_new_data'] = True
+        finally:
+            # Ensure we close any open resources here
+            pass
     
     # The signal file handling is now done in the first block
     # No duplicate code needed here
@@ -372,47 +488,54 @@ def generate_ma_signals(
     
     # Generate signals with both fixed and dynamic confidence
     confidence_types = ['fixed', 'dynamic']
-    output_files = {}
+    output_frames = {}
     
+    # Initialize output frames with empty DataFrames
     for conf_type in confidence_types:
-        try:
-            # Create a copy of signals for this confidence type
-            current_signals = df.copy()
-            
-            # Apply the appropriate confidence filter
-            if conf_type == 'fixed':
-                # For fixed confidence, we force USE_DYNAMIC_CONFIDENCE=False
-                current_signals = apply_confidence_filter(
-                    current_signals,
-                    confidence_col='confidence',
-                    signal_col='signal',
-                    fixed_threshold=confidence_threshold,
-                    use_dynamic_confidence=False
-                )
-                threshold_used = confidence_threshold
-                threshold_method = 'fixed'
-            else:
-                # For dynamic confidence, use the default behavior
-                current_signals = apply_confidence_filter(
-                    current_signals,
-                    confidence_col='confidence',
-                    signal_col='signal',
-                    fixed_threshold=confidence_threshold,
-                    use_dynamic_confidence=True
-                )
-                threshold_used = current_signals['threshold_used'].iloc[0] if 'threshold_used' in current_signals.columns else confidence_threshold
-                threshold_method = current_signals.get('threshold_method', ['dynamic'])[0]
-            
-            # Update the threshold information
-            current_signals['threshold_used'] = threshold_used
-            current_signals['threshold_method'] = threshold_method
-            
-            # Get the appropriate output path
-            conf_output_file = get_signal_file_path(ticker, date_str, conf_type)
-            output_dir = Path(conf_output_file).parent
-            output_dir.mkdir(parents=True, exist_ok=True)
-            
+        output_frames[conf_type] = pd.DataFrame()
+    
+    try:
+        for conf_type in confidence_types:
             try:
+                if progress is not None and task_id is not None:
+                    progress.update(task_id, description=f"Generating {conf_type} signals for {ticker}")
+                
+                # Create a copy of signals for this confidence type
+                current_signals = df.copy()
+                
+                # Apply the appropriate confidence filter
+                if conf_type == 'fixed':
+                    # For fixed confidence, we force USE_DYNAMIC_CONFIDENCE=False
+                    current_signals = apply_confidence_filter(
+                        current_signals,
+                        confidence_col='confidence',
+                        signal_col='signal',
+                        fixed_threshold=confidence_threshold,
+                        use_dynamic_confidence=False
+                    )
+                    threshold_used = confidence_threshold
+                    threshold_method = 'fixed'
+                else:
+                    # For dynamic confidence, use the default behavior
+                    current_signals = apply_confidence_filter(
+                        current_signals,
+                        confidence_col='confidence',
+                        signal_col='signal',
+                        fixed_threshold=confidence_threshold,
+                        use_dynamic_confidence=True
+                    )
+                    threshold_used = current_signals['threshold_used'].iloc[0] if 'threshold_used' in current_signals.columns else confidence_threshold
+                    threshold_method = current_signals.get('threshold_method', ['dynamic'])[0]
+                
+                # Update the threshold information
+                current_signals['threshold_used'] = threshold_used
+                current_signals['threshold_method'] = threshold_method
+                
+                # Get the appropriate output path
+                conf_output_file = get_signal_file_path(ticker, date_str, conf_type)
+                output_dir = Path(conf_output_file).parent
+                output_dir.mkdir(parents=True, exist_ok=True)
+                
                 # Ensure we have valid signals to process
                 if current_signals is None or current_signals.empty:
                     logger.warning(f"No signals generated for {ticker} with {conf_type} confidence")
@@ -433,57 +556,90 @@ def generate_ma_signals(
                 time_threshold = last_timestamp - pd.Timedelta(minutes=5)
                 new_signals = current_signals[pd.to_datetime(current_signals['timestamp']) >= time_threshold]
                 
-                if not new_signals.empty:
-                    # Ensure output directory exists
-                    output_dir = Path(conf_output_file).parent
-                    output_dir.mkdir(parents=True, exist_ok=True)
-                    
-                    # Save the new signals
-                    new_signals.to_csv(conf_output_file, index=False)
-                    output_files[conf_type] = conf_output_file
-                    
-                    # Count signals for logging
-                    buy_count = (new_signals["signal"] == "BUY").sum()
-                    sell_count = (new_signals["signal"] == "SELL").sum()
-                    stay_count = (new_signals["signal"] == "STAY").sum()
-                    
-                    logger.info(f"Saved {len(new_signals)} new {conf_type} signals for {ticker}:")
-                    logger.info(f"  Timestamp range: {new_signals['timestamp'].min()} to {new_signals['timestamp'].max()}")
-                    logger.info(f"  BUY: {buy_count}, SELL: {sell_count}, STAY: {stay_count}")
-                    
-                    # If we saved signals, make sure the output file exists
-                    if not Path(conf_output_file).exists():
-                        logger.error(f"Failed to save signals to {conf_output_file}")
-                        continue
+                if new_signals.empty:
+                    continue
+                
+                # Ensure output directory exists
+                output_dir = Path(conf_output_file).parent
+                output_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Prepare signals for insertion
+                signals_to_insert = []
+                for _, row in new_signals.iterrows():
+                    signal_data = {
+                        'ticker': ticker.upper(),  # Ensure consistent case
+                        'timestamp': row['timestamp'].to_pydatetime() if hasattr(row['timestamp'], 'to_pydatetime') else row['timestamp'],
+                        'signal': str(row['signal']).upper(),  # Ensure uppercase signal
+                        'signal_type': f'ma_{conf_type}',  # e.g., 'ma_dynamic' or 'ma_fixed'
+                        'confidence': float(row.get('confidence', 0.0)),
+                        'reasoning': str(row.get('reasoning', ''))  # Optional field
+                    }
+                    # Log the signal being prepared for debugging
+                    logger.debug(f"Preparing signal for {ticker}: {signal_data}")
+                    signals_to_insert.append(signal_data)
+                
+                # Insert signals one at a time with error handling
+                from core.db.crud.tickers_signals_db import insert_signal
+                from core.db.deps import get_db
+                from sqlalchemy.exc import SQLAlchemyError
+                
+                inserted_count = 0
+                try:
+                    # Use context manager for database session
+                    with get_db() as db:
+                        for signal_data in signals_to_insert:
+                            try:
+                                # Insert one signal at a time
+                                insert_signal(db, signal_data)
+                                db.commit()
+                                inserted_count += 1
+                                logger.debug(f"Inserted signal for {ticker} at {signal_data.get('timestamp')}")
+                            except SQLAlchemyError as e:
+                                db.rollback()
+                                error_msg = f"Error inserting signal for {ticker} at {signal_data.get('timestamp')}: {str(e)}"
+                                logger.error(error_msg, exc_info=True)
+                                if progress is not None and task_id is not None:
+                                    progress.print(f"[red]{error_msg}[/red]")
+                except Exception as e:
+                    error_msg = f"Database error for {ticker}: {str(e)}"
+                    logger.error(error_msg, exc_info=True)
+                    if progress is not None and task_id is not None:
+                        progress.print(f"[red]{error_msg}[/red]")
+                
+                # Log the results
+                buy_count = (new_signals["signal"] == "BUY").sum()
+                sell_count = (new_signals["signal"] == "SELL").sum()
+                stay_count = (new_signals["signal"] == "STAY").sum()
+                
+                if inserted_count > 0:
+                    logger.info(f"Successfully inserted {inserted_count} signals for {ticker}")
                 else:
-                    logger.warning(f"No new signals to save for {ticker} in the last 5 minutes")
-                    # If we have existing signals, use the latest file
-                    if latest_signal_file and latest_signal_file.exists():
-                        output_files[conf_type] = str(latest_signal_file)
+                    logger.warning(f"No signals were inserted for {ticker}")
+                
+                success_msg = f"✓ Processed {len(new_signals)} {conf_type} signals for {ticker} (BUY: {buy_count}, SELL: {sell_count}, STAY: {stay_count})"
+                logger.info(success_msg)
+                
+                if progress is not None and task_id is not None:
+                    progress.print(success_msg)
+                
+                # Store the signals in output_frames
+                output_frames[conf_type] = new_signals
                 
             except Exception as e:
-                logger.error(f"Error saving {conf_type} signals for {ticker}: {str(e)}")
+                error_msg = f"✗ Error processing {conf_type} confidence for {ticker}: {str(e)}"
+                logger.error(error_msg)
+                if progress is not None and task_id is not None:
+                    progress.print(f"[red]{error_msg}[/red]")
                 continue
-            
-            # Calculate statistics for this confidence type
-            buy_count = (current_signals["signal"] == "BUY").sum()
-            sell_count = (current_signals["signal"] == "SELL").sum()
-            stay_count = (current_signals["signal"] == "STAY").sum()
-            
-            # Only show completion message if we're not using a progress bar
-            if progress is None:
-                console.print(f"\n[bold]{conf_type.capitalize()} confidence signals:[/bold]")
-                console.print(f"  [green]BUY signals: {buy_count}[/green]")
-                console.print(f"  [red]SELL signals: {sell_count}[/red]")
-                console.print(f"  [yellow]STAY signals: {stay_count}[/yellow]")
-                console.print(f"  [blue]Threshold: {threshold_used:.6f} ({threshold_method})[/blue]")
-                console.print(f"  [cyan]Saved to: {conf_output_file}[/cyan]")
-        except Exception as e:
-            console.print(f"[red]Error processing {conf_type} confidence for {ticker}: {str(e)}[/red]")
-            continue
+        
+        # Return the signals DataFrame
+        if 'dynamic' in output_frames and not output_frames['dynamic'].empty:
+            return output_frames['dynamic']
+        return next((df for df in output_frames.values() if not df.empty), pd.DataFrame())
     
-    # Return the dynamic path for backward compatibility, or the first available path if dynamic failed
-    return output_files.get('dynamic', next(iter(output_files.values()), ''))
+    except Exception as e:
+        logger.error(f"Error in signal generation for {ticker}: {str(e)}")
+        return pd.DataFrame()
 
 def generate_all_ma_signals(
     date: Optional[Union[str, datetime]] = None,
@@ -495,7 +651,7 @@ def generate_all_ma_signals(
     peak_threshold: float = 0.99,
     progress: Optional[Progress] = None,
     task_id: Optional[int] = None
-) -> Dict[str, str]:
+) -> Dict[str, int]:
     """
     Generate moving average signals for all tickers with dynamic confidence thresholds.
     
@@ -516,99 +672,136 @@ def generate_all_ma_signals(
         task_id: Task ID for the progress bar (optional).
         
     Returns:
-        Dictionary mapping ticker symbols to their output file paths.
+        Dictionary mapping ticker symbols to the number of signals generated.
         
     Note:
         The dynamic confidence threshold is calculated using either:
         - Z-score method: mean + (Z_MIN * std) of recent confidence values, or
         - Quantile method: QUANTILE_MIN percentile of recent confidence values
-        
-        The method and parameters can be configured in core/config/constants.py
     """
-    from typing import Dict  # Import Dict for return type annotation
+    from rich.console import Console
+    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+    from core.db.deps import get_db
+    from core.db.crud import get_prices_for_ticker
     
-    # Get list of all tickers
-    try:
-        tickers = get_all_tickers()
-    except Exception as e:
-        console.print(f"[red]Error getting tickers: {str(e)}[/red]")
-        return {}
-        
-    results: Dict[str, str] = {}
+    console = Console()
+    
+    # Convert date to string if it's a datetime object
+    if date is None:
+        date_str = datetime.now().strftime("%Y%m%d")
+    elif isinstance(date, datetime):
+        date_str = date.strftime("%Y%m%d")
+    else:
+        date_str = str(date)
+    
+    tickers = load_tickers()
+    results = {}
+    
+    # Set up progress bar if not provided
+    progress_bar = progress
+    task = task_id
+    
+    if progress_bar is None:
+        progress_bar = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=console
+        )
+        task = progress_bar.add_task("Generating signals...", total=len(tickers))
+        progress_bar.start()
+    
+    # Initialize counters and trackers
     success_count = 0
-    failed_tickers: List[str] = []
+    failed_tickers = []
+    total_signals = 0
     
-    if not tickers:
-        console.print("[yellow]No tickers found in the data directory.[/yellow]")
-        return results
-    
-    # Process each ticker
-    for i, ticker in enumerate(tickers):
-        if progress and task_id is not None:
-            progress.update(task_id, advance=1, description=f"Processing {ticker}")
-        else:
-            console.print(f"\n[bold blue]=== Processing {ticker} ===[/bold blue]")
-        
-        try:
+    try:
+        for i, ticker in enumerate(tickers):
+            if progress_bar is not None and task is not None:
+                progress_bar.update(task, description=f"Processing {ticker}")
+            
             try:
-                output_file = generate_ma_signals(
-                    ticker=ticker,
-                    date=date,
-                    short_window=short_window,
-                    long_window=long_window,
-                    include_reasoning=include_reasoning,
-                    confidence_threshold=confidence_threshold,
-                    peak_window=peak_window,
-                    peak_threshold=peak_threshold,
-                    progress=progress,
-                    task_id=task_id
-                )
-                
-                # Check if we got a valid output file path
-                if output_file and Path(output_file).exists():
-                    results[ticker] = str(output_file)
+                # Get price data from database
+                with get_db() as db:
+                    prices = get_prices_for_ticker(db, ticker)
+                    if not prices:
+                        logger.warning(f"No price data available for {ticker} in database")
+                        results[ticker] = 0
+                        failed_tickers.append(ticker)
+                        continue
+                        
+                    # Convert to DataFrame for signal generation
+                    price_dicts = []
+                    for p in prices:
+                        try:
+                            price_dicts.append({
+                                'timestamp': p.timestamp,
+                                'open': float(p.open) if p.open is not None else None,
+                                'high': float(p.high) if p.high is not None else None,
+                                'low': float(p.low) if p.low is not None else None,
+                                'close': float(p.close) if p.close is not None else None,
+                                'volume': int(p.volume) if p.volume is not None else 0
+                            })
+                        except (ValueError, TypeError) as e:
+                            logger.warning(f"Skipping invalid price data for {ticker}: {str(e)}")
+                            continue
+                    
+                    if not price_dicts:
+                        logger.warning(f"No valid price data found for {ticker}")
+                        results[ticker] = 0
+                        failed_tickers.append(ticker)
+                        continue
+                        
+                    df = pd.DataFrame(price_dicts)
+                    
+                    # Generate signals - this will automatically save to database
+                    signals = generate_ma_signals(
+                        ticker=ticker,
+                        date=date_str,
+                        short_window=short_window,
+                        long_window=long_window,
+                        include_reasoning=include_reasoning,
+                        confidence_threshold=confidence_threshold,
+                        peak_window=peak_window,
+                        peak_threshold=peak_threshold,
+                        progress=progress_bar,
+                        task_id=task,
+                        df=df  # Pass the DataFrame directly
+                    )
+                    
+                    # Count the number of signals (non-NaN signal values)
+                    signal_count = signals['signal'].notna().sum()
+                    results[ticker] = signal_count
+                    total_signals += signal_count
                     success_count += 1
                     
-                    # Log the successful generation
-                    if progress:
-                        progress.console.print(f"[green]✓ Generated signals for {ticker}[/green]")
-                    else:
-                        console.print(f"[green]✓ Generated signals for {ticker}[/green]")
-                else:
-                    # If no new signals but we have a previous file, use that
-                    latest_signal_file = get_latest_signal_file(ticker, date)
-                    if latest_signal_file and latest_signal_file.exists():
-                        results[ticker] = str(latest_signal_file)
-                        success_count += 1
-                        if progress:
-                            progress.console.print(f"[yellow]⚠ Using existing signals for {ticker} (no new data)[/yellow]")
-                        else:
-                            console.print(f"[yellow]⚠ Using existing signals for {ticker} (no new data)[/yellow]")
-                    else:
-                        failed_tickers.append(ticker)
-                        if progress:
-                            progress.console.print(f"[yellow]⚠ No signals generated for {ticker} (no data)[/yellow]")
-                        else:
-                            console.print(f"[yellow]⚠ No signals generated for {ticker} (no data)[/yellow]")
+                    if progress_bar is not None and task is not None:
+                        progress_bar.print(f"✓ {ticker}: Generated {signal_count} signals")
+                    
             except Exception as e:
-                error_msg = f"Error processing {ticker}: {str(e)}"
-                failed_tickers.append(ticker)
-                if progress:
-                    progress.console.print(f"[red]{error_msg}[/red]")
+                error_msg = f"✗ Error processing {ticker}: {str(e)}"
+                if progress_bar is not None:
+                    progress_bar.print(error_msg)
                 else:
-                    console.print(f"[red]{error_msg}[/red]")
-                
-        except Exception as e:
-            error_msg = f"Error processing {ticker}: {str(e)}"
-            if progress:
-                progress.console.print(f"[red]{error_msg}[/red]")
-            else:
-                console.print(f"[red]{error_msg}[/red]")
-            failed_tickers.append(ticker)
+                    console.print(error_msg)
+                results[ticker] = 0
+                failed_tickers.append(ticker)
+            
+            # Update progress
+            if progress_bar is not None and task is not None:
+                progress_bar.update(task, advance=1)
+    
+    finally:
+        # Only stop the progress bar if we created it
+        if progress is None and progress_bar is not None:
+            progress_bar.stop()
     
     # Print summary
     console.print("\n[bold]Signal Generation Summary:[/bold]")
-    console.print(f"[green]✓ Successfully processed: {success_count} tickers[/green]")
+    console.print(f"[green]✓ Successfully processed: {success_count} tickers")
+    console.print(f"[green]✓ Total signals generated: {total_signals}[/green]")
     
     if failed_tickers:
         console.print(

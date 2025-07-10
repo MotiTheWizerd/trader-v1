@@ -9,12 +9,12 @@ A stock trading prediction system that analyzes ticker data and generates tradin
 - Smart data downloads:
   - Full 20-day history for new tickers
   - Incremental 5-minute updates for existing tickers
+  - Visual progress tracking with rich library
+  - Database integration for efficient data storage
 - Downloads historical OHLCV data for stock tickers using yfinance
-- Organized directory structure:
-  - `tickers/data/<ticker>/<date>_<ticker>.csv` - Raw OHLCV data
-  - `tickers/signals/<ticker>/<date>_<ticker>_signals.csv` - Generated trading signals
-- Clean terminal UI using rich library
-- Generates trading signals based on technical indicators
+- Organized data storage in PostgreSQL database
+- Clean terminal UI using rich library with real-time progress updates
+- Generates trading signals based on technical indicators (separate pipeline step)
 - Retry logic for network failures
 
 ## Usage
@@ -22,14 +22,17 @@ A stock trading prediction system that analyzes ticker data and generates tradin
 ### Data Download
 
 ```bash
-# Download ticker data
-python -m scripts.download_tickers --preview
+# Run the download pipeline through the dashboard
+poetry run python dashboard.py
+# Then select option 2 (Run Complete Pipeline)
 
-# Download specific tickers
-python -m scripts.download_tickers --tickers AAPL MSFT GOOG
+# Or run directly
+poetry run python -m scripts.dashboard run-pipeline
 
-# Download with specific interval
-python -m scripts.download_tickers --interval 1h
+# Available options:
+# --date: Specify date (YYYY-MM-DD format)
+# --interval: Data interval (default: 5m)
+# --period: Period to download (default: 20d)
 ```
 
 ### Real-time Scheduler

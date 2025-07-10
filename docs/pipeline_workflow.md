@@ -8,45 +8,55 @@ The trading pipeline is the central orchestration system that coordinates data d
 
 ```
                          ┌─────────────────┐
-                         │   run_pipeline  │
+                         │   Dashboard UI   │
                          └────────┬────────┘
                                   │
-                                  ▼
-              ┌─────────────────────────────────────┐
-              │                                     │
-              ▼                                     ▼
-┌─────────────────────────┐           ┌─────────────────────────┐
-│    Data Downloading     │           │    Signal Generation    │
-│  (download_all_tickers) │           │ (generate_all_ma_signals)│
-└─────────────────────────┘           └─────────────────────────┘
-              │                                     │
-              ▼                                     ▼
-┌─────────────────────────┐           ┌─────────────────────────┐
-│     OHLCV CSV Files     │           │     Signal CSV Files    │
-└─────────────────────────┘           └─────────────────────────┘
+                         ┌────────▼────────┐
+                         │  Data Pipeline  │
+                         └────────┬────────┘
+                                  │
+              ┌───────────────────┼───────────────────┐
+              │                   │                   │
+    ┌─────────▼───────┐  ┌───────▼────────┐  ┌───────▼────────┐
+    │  Data Download  │  │  Signal Gen    │  │  Data Cleanup  │
+    │  (Option 2)     │  │  (Option 3)    │  │  (Option 1)    │
+    └─────────────────┘  └────────────────┘  └────────────────┘
 ```
+
+### Key Changes in v1.1:
+- **Separated Data Download and Signal Generation**: These are now distinct operations
+- **Improved Progress Tracking**: Real-time progress bars with detailed status
+- **Database Integration**: All data is now stored in PostgreSQL
+- **Cleaner UI**: Better organized dashboard with clear options
 
 ## Pipeline Components
 
-### 1. Pipeline Runner (`run_pipeline.py`)
+### 1. Dashboard Interface (`dashboard.py`)
 
-The main entry point that coordinates the entire workflow:
+The main entry point that provides a user-friendly interface:
 
-- Parses command-line arguments
-- Downloads ticker data
-- Generates trading signals
-- Displays results in formatted tables
+- Presents a menu of options:
+  1. Clear Database: Remove all data from tickers_data and tickers_signals tables
+  2. Run Complete Pipeline: Download data for all tickers
+  3. Regenerate Signals: Generate trading signals from existing data
+  4. Exit: Close the application
+- Handles user input and error cases
+- Displays progress and results in a clean, formatted way
 
 ### 2. Data Downloader (`core/data/downloader.py`)
 
-Responsible for acquiring historical price data:
+Responsible for acquiring and storing historical price data:
 
 - Downloads OHLCV data from Yahoo Finance
 - Supports various intervals (1m, 5m, 1h, 1d)
-- Saves data to CSV files in the ticker-specific directories
-- File Naming Convention:
-  - Data files: `tickers/data/<TICKER>/<YYYYMMDD>_<TICKER>.csv`
-  - Signal files: `tickers/signals/<TICKER>/<YYYYMMDD>_<TICKER>_signals.csv`
+- Stores data in PostgreSQL database with the following schema:
+  - `tickers_data` table: Contains OHLCV data with timestamps
+  - `tickers_signals` table: Stores generated trading signals
+- Features:
+  - Progress tracking with rich library
+  - Batch processing of tickers
+  - Error handling and retries
+  - Duplicate detection
 
 ### 3. Signal Generator (`core/signals/moving_average.py`)
 
@@ -74,27 +84,45 @@ Provides visual feedback on pipeline execution:
 
 ## Pipeline Execution Flow
 
+### 1. Data Download (Option 2)
 1. **Initialization**:
-   - Parse command-line arguments
-   - Set up console and progress displays
-   - Determine date to process
+   - Load ticker list from `tickers.json`
+   - Set up database connection
+   - Initialize progress tracking
 
 2. **Data Acquisition**:
-   - Read ticker list from `tickers.json`
-   - For each ticker, download OHLCV data
-   - Save data to CSV files
+   - For each ticker:
+     - Download OHLCV data from Yahoo Finance
+     - Process and clean the data
+     - Store in PostgreSQL database
+     - Update progress bar
+   - Display summary of downloaded data
 
-3. **Signal Processing**:
+### 2. Signal Generation (Option 3)
+1. **Initialization**:
+   - Load configuration parameters
+   - Set up database connection
+   - Initialize progress tracking
+
+2. **Signal Processing**:
    - For each ticker with available data:
-     - Load OHLCV data
+     - Load OHLCV data from database
      - Calculate technical indicators
-     - Apply signal logic and filters
-     - Save signals to CSV files
+     - Generate trading signals
+     - Store signals in database
+     - Update progress bar
+   - Display summary of generated signals
 
-4. **Results Reporting**:
-   - Display summary tables
-   - Report success/failure statistics
-   - Show file paths for generated data
+### 3. Database Management (Option 1)
+1. **Verification**:
+   - Confirm user wants to proceed with data deletion
+   - Verify database connection
+
+2. **Cleanup**:
+   - Truncate tickers_data table
+   - Truncate tickers_signals table
+   - Verify tables are empty
+   - Display confirmation message
 
 ## Running the Pipeline
 

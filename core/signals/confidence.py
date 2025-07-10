@@ -4,12 +4,16 @@ Dynamic Confidence Threshold Module.
 This module provides functionality for calculating dynamic confidence thresholds
 based on historical volatility using either z-score or quantile methods.
 """
+import logging
 from typing import Tuple, Optional
 import numpy as np
 import pandas as pd
 
 from core.config import console
 from core.config.constants import WINDOW_CONF, Z_MIN, QUANTILE_MIN, USE_QUANTILE, USE_DYNAMIC_CONFIDENCE
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 def calculate_dynamic_threshold(
     values: pd.Series,
@@ -131,10 +135,17 @@ def apply_confidence_filter(
     
     # Apply threshold filter (only keep signals above threshold)
     try:
-        # Convert to numpy arrays to avoid index alignment issues
-        conf_values = df[confidence_col].values
+        # Extract confidence values and signals, ensuring confidence is numeric
+        conf_values = pd.to_numeric(df[confidence_col], errors='coerce')
+        if conf_values.isna().any():
+            logger.warning(f"Converted {conf_values.isna().sum()} non-numeric confidence values to NaN")
+        signal_values = df[signal_col]
+        
+        # Debug log the confidence values
+        logger.debug(f"Confidence values dtype: {conf_values.dtype}")
+        logger.debug(f"Confidence values sample: {conf_values.head()}")
+        
         thresh_values = thresholds.values if hasattr(thresholds, 'values') else thresholds
-        signal_values = df[signal_col].values
         
         # Create mask for low confidence signals (that aren't already 'STAY')
         mask_low_confidence = (conf_values < thresh_values) & (signal_values != 'STAY')

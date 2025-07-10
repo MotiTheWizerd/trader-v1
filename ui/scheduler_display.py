@@ -5,6 +5,7 @@ This module contains rich-formatted UI components for displaying scheduler statu
 job results, and error messages in the terminal.
 """
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, List, Optional, Any
 
 from rich.console import Console
@@ -26,7 +27,7 @@ class SchedulerDisplay:
         """Display scheduler startup message."""
         self.console.print(Panel(
             "[bold green]Real-Time Stock Signal Scheduler[/bold green]\n"
-            "[blue]Running jobs every 5 minutes during market hours[/blue]",
+            "[blue]Running jobs every 1 minute during market hours[/blue]",
             title="Startup",
             border_style="green"
         ))
@@ -120,24 +121,36 @@ class SchedulerDisplay:
         table.add_column("Ticker", style="cyan")
         table.add_column("Status", style="bold")
         table.add_column("Attempts", style="yellow")
+        table.add_column("Rows Fetched", style="blue")
+        table.add_column("Records Saved", style="green")
         table.add_column("Data File", style="blue")
-        table.add_column("Signal File", style="green")
         
         # Add results to table
         for result in results:
             ticker = result["ticker"]
             status = result["status"]
             attempts = result.get("attempts", 1)  # Default to 1 if not present
-            data_file = result["data_file"] or "N/A"
-            signal_file = result["signal_file"] or "N/A"
+            row_count = result.get("row_count", 0)
+            records_saved = result.get("records_saved", 0)
+            data_file = result.get("data_file", "N/A")
             
             status_style = "green" if status == "success" else "red"
+            
+            # Format the data file name to be more concise, handling None values
+            data_file_display = "N/A"
+            if data_file and data_file != "N/A":
+                try:
+                    data_file_display = Path(data_file).name
+                except (TypeError, AttributeError):
+                    data_file_display = str(data_file) if data_file is not None else "N/A"
+            
             table.add_row(
                 ticker,
                 f"[{status_style}]{status.upper()}[/{status_style}]",
                 str(attempts),
-                data_file.split("/")[-1] if data_file != "N/A" else "N/A",
-                signal_file.split("/")[-1] if signal_file != "N/A" else "N/A"
+                str(row_count) if status == "success" and row_count is not None else "N/A",
+                str(records_saved) if status == "success" and records_saved is not None else "N/A",
+                data_file_display
             )
         
         # Print results table
