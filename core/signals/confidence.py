@@ -100,6 +100,10 @@ def apply_confidence_filter(
     # Determine which confidence type to use
     use_dynamic = USE_DYNAMIC_CONFIDENCE if use_dynamic_confidence is None else use_dynamic_confidence
     
+    # Initialize default values
+    thresholds = pd.Series(fixed_threshold if fixed_threshold is not None else 0.005, index=df.index)
+    method = 'default'
+    
     try:
         if use_dynamic:
             # Calculate dynamic thresholds
@@ -126,8 +130,21 @@ def apply_confidence_filter(
             df['threshold_method'] = 'error_default'
     
     # Apply threshold filter (only keep signals above threshold)
-    mask_low_confidence = (df[confidence_col] < thresholds) & (df[signal_col] != 'STAY')
-    df.loc[mask_low_confidence, signal_col] = 'STAY'
+    try:
+        # Convert to numpy arrays to avoid index alignment issues
+        conf_values = df[confidence_col].values
+        thresh_values = thresholds.values if hasattr(thresholds, 'values') else thresholds
+        signal_values = df[signal_col].values
+        
+        # Create mask for low confidence signals (that aren't already 'STAY')
+        mask_low_confidence = (conf_values < thresh_values) & (signal_values != 'STAY')
+        
+        # Apply the mask to update signals
+        df.loc[mask_low_confidence, signal_col] = 'STAY'
+    except Exception as e:
+        console.print(f"[red]Error applying confidence filter: {e}")
+        # If there's an error, fall back to keeping signals as is
+        pass
     
     # Add threshold method to the first row for reference
     if not df.empty:

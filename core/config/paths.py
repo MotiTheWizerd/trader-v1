@@ -13,8 +13,11 @@ from typing import Optional
 # Get the project root directory (core/config/../../)
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
-# Base directory for all data
+# Base directories
 TICKERS_DIR = PROJECT_ROOT / "tickers"
+TICKER_DATA_DIR = TICKERS_DIR / "data"
+SIGNALS_DIR = TICKERS_DIR / "signals"
+LOGS_DIR = PROJECT_ROOT / "logs"
 
 # File path patterns - these are the only things you need to change
 # to modify the file structure
@@ -55,4 +58,29 @@ def get_signal_file_path(ticker: str, date: str, confidence_type: str = 'dynamic
         date=date,
         confidence_type=confidence_type
     )).resolve()
+    return str(path)
+
+
+def get_log_file_path(date: str = None) -> str:
+    """
+    Get the path to a log file.
+    
+    Args:
+        date: Date string in YYYYMMDD format. If None, uses current date.
+        
+    Returns:
+        String path to the log file
+        Format: "logs/log_YYYYMMDD.jsonl"
+    """
+    import datetime
+    
+    if date is None:
+        date = datetime.datetime.now().strftime("%Y%m%d")
+    
+    log_filename = f"log_{date}.jsonl"
+    path = (LOGS_DIR / log_filename).resolve()
+    
+    # Ensure the logs directory exists
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    
     return str(path)

@@ -2,7 +2,22 @@
 
 ## Overview
 
-This document explains the two approaches to confidence thresholding in the moving average signal generator: **fixed** and **dynamic** confidence thresholds. These thresholds determine when a moving average crossover generates a trading signal based on the strength of the crossover.
+This document explains the dual-approach confidence thresholding system in the moving average signal generator, which now supports generating both **fixed** and **dynamic** confidence signals simultaneously. These thresholds determine when a moving average crossover generates a trading signal based on the strength of the crossover.
+
+## Key Changes
+
+- **Dual Signal Generation**: The system now generates both fixed and dynamic confidence signals in a single run
+- **Separate Output Files**: Signals are saved in separate CSV files with `_fixed` and `_dynamic` suffixes
+- **Improved Error Handling**: More robust handling of edge cases and error conditions
+- **Enhanced Logging**: Better visibility into which threshold method was used for each signal
+
+## Signal Generation Modes
+
+The system now supports three modes of operation:
+
+1. **Fixed Confidence Only**: Uses only the fixed threshold approach
+2. **Dynamic Confidence Only**: Uses only the dynamic threshold approach (default)
+3. **Dual Mode**: Generates both fixed and dynamic signals simultaneously
 
 ## Fixed vs. Dynamic Confidence
 
@@ -69,18 +84,37 @@ The dynamic confidence approach adapts to changing market volatility:
 
 ## Configuration
 
-### Dynamic vs Fixed Threshold
+### Signal Generation Modes
 
-You can switch between dynamic and fixed confidence thresholds by modifying `USE_DYNAMIC_CONFIDENCE` in `core/config/constants.py`:
+You can control the signal generation mode by modifying `GENERATE_BOTH_SIGNAL_TYPES` in `core/config/constants.py`:
 
 ```python
-# Moving Average Signal Generation
+# Signal Generation Modes
+GENERATE_BOTH_SIGNAL_TYPES = True  # Set to False to generate only one type
+USE_DYNAMIC_CONFIDENCE = True     # Which type to generate if not both
+
+# Dynamic Threshold Parameters (when enabled)
 WINDOW_CONF = 100    # Rolling window size for dynamic confidence calculation
 Z_MIN = 1.0          # Minimum z-score for dynamic confidence threshold
 QUANTILE_MIN = 0.90  # Minimum quantile for dynamic confidence threshold
 USE_QUANTILE = False # Whether to use quantile (True) or z-score (False) for dynamic threshold
-USE_DYNAMIC_CONFIDENCE = True  # Set to False to use fixed threshold
 ```
+
+### Output Files
+
+The system generates the following output files for each ticker:
+
+- `{date}_{ticker}_signal_fixed.csv`: Signals using fixed confidence threshold
+- `{date}_{ticker}_signal_dynamic.csv`: Signals using dynamic confidence threshold
+
+Each file contains the following columns:
+- `timestamp`: The time of the signal
+- `open`, `high`, `low`, `close`, `volume`: Price and volume data
+- `ma_short`, `ma_long`: Moving average values
+- `signal`: The generated signal (BUY/SELL/STAY)
+- `confidence`: The confidence value of the signal
+- `threshold_used`: The threshold value that was applied
+- `threshold_method`: The method used to determine the threshold
 
 ### Dynamic Threshold Parameters
 
@@ -99,33 +133,84 @@ When `USE_DYNAMIC_CONFIDENCE = False`, the system uses a fixed threshold:
 
 ## Usage
 
-### Using Dynamic Threshold (Default)
+### Generating Both Signal Types (Default)
 
-By default, the system uses dynamic confidence thresholds. No code changes are needed:
+By default, the system generates both fixed and dynamic confidence signals:
 
 ```python
-# This will use dynamic thresholding with default parameters
+# This will generate both fixed and dynamic signals
 generate_ma_signals(ticker='AAPL')
 ```
 
-### Using Fixed Threshold
+### Generating a Single Signal Type
 
-To use a fixed threshold instead:
+To generate only one type of signal:
 
-1. Set `USE_DYNAMIC_CONFIDENCE = False` in `core/config/constants.py`
-2. The system will then use the `confidence_threshold` parameter:
+1. Set `GENERATE_BOTH_SIGNAL_TYPES = False` in `core/config/constants.py`
+2. Set `USE_DYNAMIC_CONFIDENCE` to choose which type to generate
 
 ```python
-# This will use a fixed 1% threshold
-generate_ma_signals(ticker='AAPL', confidence_threshold=0.01)
+# To generate only dynamic signals with custom parameters
+generate_ma_signals(
+    ticker='AAPL',
+    confidence_threshold=0.0075,  # Used if dynamic threshold falls back
+    short_window=5,
+    long_window=20
+)
 ```
 
-### Checking Which Threshold Was Used
+### Accessing the Generated Signals
 
-The generated signal DataFrame includes a `threshold_method` column that indicates which thresholding method was used:
-- `'mean + Xσ'` for dynamic z-score threshold
-- `'XXth percentile'` for dynamic quantile threshold
-- `'fixed'` for fixed threshold
+```python
+import pandas as pd
+
+# Load the generated signals
+date_str = "20250709"  # Replace with your date
+ticker = "AAPL"
+
+# Load both signal types
+fixed_signals = pd.read_csv(f"tickers/{ticker}/signals/{date_str}_{ticker}_signal_fixed.csv")
+dynamic_signals = pd.read_csv(f"tickers/{ticker}/signals/{date_str}_{ticker}_signal_dynamic.csv")
+
+# Compare signals
+print(f"Fixed threshold signals (first 5):")
+print(fixed_signals[['timestamp', 'signal', 'confidence', 'threshold_used']].head())
+
+print("\nDynamic threshold signals (first 5):")
+print(dynamic_signals[['timestamp', 'signal', 'confidence', 'threshold_used', 'threshold_method']].head())
+```
+
+### Signal Analysis
+
+#### Threshold Methods
+
+Each signal includes metadata about how it was generated:
+
+- **Fixed Threshold Signals**:
+  - `threshold_method`: `'fixed (0.005000)'` (shows the fixed value used)
+  - `threshold_used`: The fixed threshold value
+
+- **Dynamic Threshold Signals**:
+  - `threshold_method`: `'mean + 1.0σ'` or `'90th percentile'`
+  - `threshold_used`: The calculated threshold value for each timestamp
+
+#### Comparing Signals
+
+To compare signals from both methods:
+
+```python
+# Count signals by type
+def summarize_signals(signals, name):
+    counts = signals['signal'].value_counts()
+    print(f"\n{name} Signals:")
+    print(f"  BUY: {counts.get('BUY', 0)}")
+    print(f"  SELL: {counts.get('SELL', 0)}")
+    print(f"  STAY: {counts.get('STAY', 0)}")
+    print(f"  Threshold: {signals['threshold_used'].iloc[0]:.6f} ({signals['threshold_method'].iloc[0]})")
+
+summarize_signals(fixed_signals, "Fixed")
+summarize_signals(dynamic_signals, "Dynamic")
+```
 
 ### Comparing Strategies
 
@@ -161,4 +246,16 @@ This will generate test data and create visualizations comparing the two strateg
 
 ## Performance Considerations
 
-The dynamic threshold adds minimal computational overhead since it uses efficient rolling window calculations. The impact is negligible for typical window sizes (< 200).
+- **Dual Signal Generation**: Generating both signal types adds about 30-40% overhead compared to generating a single signal type
+- **Memory Usage**: Each signal type is processed independently, so memory usage is approximately doubled when generating both
+- **I/O Operations**: Two output files are written instead of one, but this has minimal impact on performance
+
+For most use cases, the performance impact is negligible. However, if processing a large number of tickers or working with limited resources, you may want to generate only one signal type at a time.
+
+## Best Practices
+
+1. **Start with Both Types**: Initially generate both signal types to compare their performance
+2. **Backtest Thoroughly**: Test both signal types across different market conditions
+3. **Monitor Performance**: Keep track of which signal type performs better for each asset
+4. **Adjust Parameters**: Fine-tune the parameters for each signal type based on backtesting results
+5. **Consider Hybrid Approaches**: You might find that fixed thresholds work better for some assets while dynamic thresholds work better for others

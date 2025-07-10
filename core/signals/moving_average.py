@@ -20,27 +20,31 @@ near a local maximum (within a configurable percentage threshold).
 Signals with low confidence or SELL signals not near peaks are downgraded to STAY to reduce false positives.
 """
 import os
-from pathlib import Path
-from typing import Optional, Union, List, Dict, Tuple, Any
-import json
-import numpy as np
 import pandas as pd
-from datetime import datetime
+import numpy as np
+from typing import Optional, Tuple, Dict, Any, List, Union
+from pathlib import Path
+from datetime import datetime, timedelta
+import logging
 
-from rich.progress import (
-    Progress, 
-    TextColumn, 
-    BarColumn, 
-    TaskProgressColumn,
-    TimeRemainingColumn
-)
+# Rich progress bar
+from rich.progress import Progress, TaskProgressColumn, TimeRemainingColumn, TextColumn, BarColumn
 
-from core.config import (
-    get_ticker_data_path,
-    get_signal_file_path,
-    console,  # Use the configured console
-    ensure_directory_exists
-)
+# Import logger configuration
+import logging
+from core.logger import log_info, log_warning, log_error
+
+# Configure logger
+logger = logging.getLogger(__name__)
+
+# Import path configuration
+from core.config.paths import get_ticker_data_path, get_signal_file_path
+
+# Import data loading
+from core.data.loader import load_historical_data
+
+# Import console
+from core.config.console import console
 from core.config.settings import DEBUG
 
 # Import confidence threshold utilities
@@ -93,63 +97,126 @@ def generate_ma_signals(
     if progress is None:
         console.print(f"\n[yellow]=== Processing {ticker} ===[/yellow]")
     
-    # Convert date to YYYYMMDD format
+    # Handle date formatting - accept both datetime and string in YYYYMMDD or YYYYMMDDHHMM format
     if date is None:
-        date_str = datetime.now().strftime("%Y%m%d")
+        date_str = datetime.now().strftime("%Y%m%d%H%M")
     elif isinstance(date, datetime):
-        date_str = date.strftime("%Y%m%d")
+        date_str = date.strftime("%Y%m%d%H%M")
     else:
         # Handle string date, remove any non-numeric characters
         date_str = ''.join(c for c in str(date) if c.isdigit())
-        # Ensure we have at least 8 digits (YYYYMMDD)
+        # Ensure we have at least YYYYMMDD
         if len(date_str) < 8:
-            date_str = datetime.now().strftime("%Y%m%d")
-        else:
-            # Take first 8 digits in case there's extra
-            date_str = date_str[:8]
-    
-    # Get input file path
-    input_file = Path(get_ticker_data_path(ticker, date_str))
-    
-    # Debug output
-    if progress is None:
-        console.print(f"Looking for input file: {input_file}")
-        console.print(f"Input file exists: {input_file.exists()}")
-        console.print(f"Current working directory: {os.getcwd()}")
-    
-    # Check if input file exists
-    if not input_file.exists():
-        if progress is None:
-            console.print(f"[red]Error: Input file not found: {input_file}[/red]")
-        return None
+            # If we don't have enough digits, use current date
+            date_str = datetime.now().strftime("%Y%m%d%H%M")
         
+        # Take first 12 characters (YYYYMMDDHHMM) if longer
+        date_str = date_str[:12]
+    
+    # Initialize the _is_new_data column early to prevent KeyError
+    df = load_historical_data(ticker)
+    if df is None or df.empty:
+        logger.error(f"No historical data found for {ticker}")
+        return None
+    
+    # Initialize _is_new_data as True for all rows by default
+    df['_is_new_data'] = True
+        
+    # Try to find existing signals to determine which data is new
+    signal_dir = Path(get_signal_file_path(ticker, "*", "dynamic")).parent
+    signal_files = list(signal_dir.glob(f"*{ticker}*dynamic*.csv"))
+    latest_signal_file = None
+    
+    if signal_files:
+        try:
+            # Find the most recent signal file
+            latest_signal_file = max(signal_files, key=lambda x: x.stat().st_mtime)
+            # Read the last timestamp from the signal file
+            existing_signals = pd.read_csv(latest_signal_file)
+            if 'timestamp' in existing_signals.columns and not existing_signals.empty:
+                last_timestamp = pd.to_datetime(existing_signals['timestamp'].iloc[-1])
+                # Update _is_new_data based on timestamp comparison
+                df['_is_new_data'] = (df.index > last_timestamp)
+                if not df['_is_new_data'].any():
+                    logger.info(f"No new data to process for {ticker} since last run")
+                    return str(latest_signal_file)  # Return existing file if no new data
+        except Exception as e:
+            logger.warning(f"Error reading existing signals for {ticker}: {e}")
+            # If there's an error, process all data as new
+            df['_is_new_data'] = True
+    
+    # The signal file handling is now done in the first block
+    # No duplicate code needed here
+        
+    # Adjust window sizes if we don't have enough data
+    if len(df) < long_window * 2:
+        # If we don't have enough data for the default windows, adjust them
+        max_possible_window = max(5, len(df) // 2)  # Ensure at least 5 for short window
+        if max_possible_window < 5:  # If we have very little data, just use what we have
+            logger.warning(f"Very limited data for {ticker} ({len(df)} rows). Using all available data.")
+            short_window = 3
+            long_window = 5
+        else:
+            # Scale down the windows proportionally
+            ratio = max_possible_window / long_window
+            short_window = max(5, int(short_window * ratio))
+            long_window = max(10, int(long_window * ratio))
+            logger.warning(f"Adjusted windows for {ticker} to short={short_window}, long={long_window} based on available data")
+    
+    logger.info(f"Using {len(df)} rows of data for {ticker} with windows: short={short_window}, long={long_window}")
+        
+    logger.info(f"Loaded {len(df)} rows of historical data for {ticker}")
+    
+    # Ensure we have the required columns (case-insensitive)
+    df.columns = [col.lower() for col in df.columns]
+    required_columns = ['open', 'high', 'low', 'close', 'volume']
+    
+    for col in required_columns:
+        if col not in df.columns:
+            error_msg = f"Missing required column '{col}' in historical data for {ticker}"
+            logger.error(error_msg)
+            if progress and task_id is not None:
+                progress.update(task_id, description=f"[red]{error_msg}")
+            return None
+    
+    # Ensure the index is datetime and sort
+    if not isinstance(df.index, pd.DatetimeIndex):
+        if 'timestamp' in df.columns:
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            df.set_index('timestamp', inplace=True)
+        else:
+            df.index = pd.to_datetime(df.index)
+    
+    df.sort_index(inplace=True)
+    
+    # Ensure we have enough data points
+    if len(df) < long_window:
+        error_msg = (
+            f"Not enough data points ({len(df)}) for {ticker}. "
+            f"Need at least {long_window} for the long moving average."
+        )
+        logger.error(error_msg)
+        if progress and task_id is not None:
+            progress.update(task_id, description=f"[red]{error_msg}")
+        return None
+    
     # Ensure output directory exists (use dynamic path as base)
     output_dir = Path(get_signal_file_path(ticker, date_str, 'dynamic')).parent
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Debug: List files in the input file's parent directory
-    input_dir = input_file.parent
-    if input_dir.exists():
-        files = list(input_dir.glob('*'))
-        if progress is None:
-            console.print(f"[yellow]Files in directory {input_dir}:")
-            for f in files:
-                console.print(f"  - {f.name} (size: {f.stat().st_size} bytes)")
-    else:
-        console.print(f"[red]Input directory does not exist: {input_dir}")
+    # Debug: Show info about the loaded data
+    if progress is None:
+        console.print(f"[green]Successfully loaded {len(df)} rows of historical data for {ticker}")
+        if not df.empty:
+            console.print(f"Date range: {df.index.min()} to {df.index.max()}")
+            console.print(f"Columns: {', '.join(df.columns)}")
+    
+    # Ensure we have the required columns
+    required_cols = ['open', 'high', 'low', 'close', 'volume']
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        console.print(f"[red]Missing required columns: {', '.join(missing_cols)}")
         return None
-
-    # Read the OHLCV data
-    try:
-        df = pd.read_csv(input_file)
-        if progress is None:
-            console.print(f"[green]Successfully read {len(df)} rows from {input_file}")
-    except Exception as e:
-        console.print(f"[red]Error reading {input_file}: {e}")
-        return None
-
-    # Ensure timestamp column is properly formatted
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
     
     # Calculate moving averages and peak detection
     # If no external progress bar is provided, create a local one
@@ -290,7 +357,7 @@ def generate_ma_signals(
     
     if include_reasoning and "reasoning" in df.columns:
         columns.append("reasoning")
-    
+        
     # Ensure all required columns exist
     for col in ["ma_short", "ma_long", "recent_max", "is_peak_zone", "confidence", "threshold_used"]:
         if col not in df.columns:
@@ -298,6 +365,10 @@ def generate_ma_signals(
     
     # Select and reorder columns
     df = df[[col for col in columns if col in df.columns]]
+    
+    # Ensure the signal directory exists
+    signal_dir = Path(get_signal_file_path(ticker, date_str, "dynamic")).parent
+    signal_dir.mkdir(parents=True, exist_ok=True)
     
     # Generate signals with both fixed and dynamic confidence
     confidence_types = ['fixed', 'dynamic']
@@ -341,9 +412,58 @@ def generate_ma_signals(
             output_dir = Path(conf_output_file).parent
             output_dir.mkdir(parents=True, exist_ok=True)
             
-            # Save the signals
-            current_signals.to_csv(conf_output_file, index=False)
-            output_files[conf_type] = conf_output_file
+            try:
+                # Ensure we have valid signals to process
+                if current_signals is None or current_signals.empty:
+                    logger.warning(f"No signals generated for {ticker} with {conf_type} confidence")
+                    continue
+                    
+                # Ensure timestamp column exists
+                if 'timestamp' not in current_signals.columns:
+                    logger.error(f"No timestamp column in signals for {ticker}")
+                    continue
+                    
+                # Sort by timestamp to ensure we're getting the latest
+                current_signals = current_signals.sort_values('timestamp')
+                
+                # Get the last timestamp from the current data
+                last_timestamp = pd.to_datetime(current_signals['timestamp']).max()
+                
+                # Filter for the most recent data points (last 5 minutes)
+                time_threshold = last_timestamp - pd.Timedelta(minutes=5)
+                new_signals = current_signals[pd.to_datetime(current_signals['timestamp']) >= time_threshold]
+                
+                if not new_signals.empty:
+                    # Ensure output directory exists
+                    output_dir = Path(conf_output_file).parent
+                    output_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    # Save the new signals
+                    new_signals.to_csv(conf_output_file, index=False)
+                    output_files[conf_type] = conf_output_file
+                    
+                    # Count signals for logging
+                    buy_count = (new_signals["signal"] == "BUY").sum()
+                    sell_count = (new_signals["signal"] == "SELL").sum()
+                    stay_count = (new_signals["signal"] == "STAY").sum()
+                    
+                    logger.info(f"Saved {len(new_signals)} new {conf_type} signals for {ticker}:")
+                    logger.info(f"  Timestamp range: {new_signals['timestamp'].min()} to {new_signals['timestamp'].max()}")
+                    logger.info(f"  BUY: {buy_count}, SELL: {sell_count}, STAY: {stay_count}")
+                    
+                    # If we saved signals, make sure the output file exists
+                    if not Path(conf_output_file).exists():
+                        logger.error(f"Failed to save signals to {conf_output_file}")
+                        continue
+                else:
+                    logger.warning(f"No new signals to save for {ticker} in the last 5 minutes")
+                    # If we have existing signals, use the latest file
+                    if latest_signal_file and latest_signal_file.exists():
+                        output_files[conf_type] = str(latest_signal_file)
+                
+            except Exception as e:
+                logger.error(f"Error saving {conf_type} signals for {ticker}: {str(e)}")
+                continue
             
             # Calculate statistics for this confidence type
             buy_count = (current_signals["signal"] == "BUY").sum()
@@ -430,23 +550,53 @@ def generate_all_ma_signals(
             console.print(f"\n[bold blue]=== Processing {ticker} ===[/bold blue]")
         
         try:
-            output_file = generate_ma_signals(
-                ticker=ticker,
-                date=date,
-                short_window=short_window,
-                long_window=long_window,
-                include_reasoning=include_reasoning,
-                confidence_threshold=confidence_threshold,
-                peak_window=peak_window,
-                peak_threshold=peak_threshold,
-                progress=progress,
-                task_id=task_id
-            )
-            if output_file:
-                results[ticker] = str(output_file)
-                success_count += 1
-            else:
+            try:
+                output_file = generate_ma_signals(
+                    ticker=ticker,
+                    date=date,
+                    short_window=short_window,
+                    long_window=long_window,
+                    include_reasoning=include_reasoning,
+                    confidence_threshold=confidence_threshold,
+                    peak_window=peak_window,
+                    peak_threshold=peak_threshold,
+                    progress=progress,
+                    task_id=task_id
+                )
+                
+                # Check if we got a valid output file path
+                if output_file and Path(output_file).exists():
+                    results[ticker] = str(output_file)
+                    success_count += 1
+                    
+                    # Log the successful generation
+                    if progress:
+                        progress.console.print(f"[green]✓ Generated signals for {ticker}[/green]")
+                    else:
+                        console.print(f"[green]✓ Generated signals for {ticker}[/green]")
+                else:
+                    # If no new signals but we have a previous file, use that
+                    latest_signal_file = get_latest_signal_file(ticker, date)
+                    if latest_signal_file and latest_signal_file.exists():
+                        results[ticker] = str(latest_signal_file)
+                        success_count += 1
+                        if progress:
+                            progress.console.print(f"[yellow]⚠ Using existing signals for {ticker} (no new data)[/yellow]")
+                        else:
+                            console.print(f"[yellow]⚠ Using existing signals for {ticker} (no new data)[/yellow]")
+                    else:
+                        failed_tickers.append(ticker)
+                        if progress:
+                            progress.console.print(f"[yellow]⚠ No signals generated for {ticker} (no data)[/yellow]")
+                        else:
+                            console.print(f"[yellow]⚠ No signals generated for {ticker} (no data)[/yellow]")
+            except Exception as e:
+                error_msg = f"Error processing {ticker}: {str(e)}"
                 failed_tickers.append(ticker)
+                if progress:
+                    progress.console.print(f"[red]{error_msg}[/red]")
+                else:
+                    console.print(f"[red]{error_msg}[/red]")
                 
         except Exception as e:
             error_msg = f"Error processing {ticker}: {str(e)}"

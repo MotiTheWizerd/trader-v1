@@ -58,6 +58,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 # Import project modules
+
+# Default configuration
+DEFAULT_INTERVAL = "5m"  # 5-minute intervals
+DEFAULT_PERIOD = "20d"    # 20 days of historical data
+
 from core.data.downloader import load_tickers, download_ticker_data
 from core.signals.moving_average import generate_ma_signals
 from core.logger import log_info, log_warning, log_error
@@ -97,19 +102,14 @@ def is_market_open() -> Tuple[bool, datetime]:
     Returns:
         Tuple[bool, datetime]: (is_open, next_open_time)
             - is_open (bool): True if market is open, False otherwise
-            - next_open_time (datetime): Next market open time in local timezone
+            - next_open_time (datetime): Next market open time in ET timezone
     """
-    # Get current time in market timezone (ET)
-    now_utc = datetime.now(pytz.UTC)
-    now_et = now_utc.astimezone(MARKET_TZ)
+    # Get current time in ET
+    now_et = datetime.now(MARKET_TZ)
     
-    # Market opening time (9:30 AM ET)
-    market_open_hour = 9
-    market_open_minute = 30
-    
-    # Market closing time (4:00 PM ET)
-    market_close_hour = 16
-    market_close_minute = 0
+    # Create time objects for market hours (ET)
+    market_open_time = dt_time(9, 30)  # 9:30 AM ET
+    market_close_time = dt_time(16, 0)  # 4:00 PM ET
     
     # Check if it's a weekday (0 = Monday, 4 = Friday)
     is_weekday = now_et.weekday() <= 4  # Monday to Friday
@@ -119,20 +119,50 @@ def is_market_open() -> Tuple[bool, datetime]:
     schedule = NYSE_CALENDAR.schedule(start_date=today_str, end_date=today_str)
     is_holiday = schedule.empty  # Empty schedule means it's a holiday
     
-    # Calculate market open time for today in ET
-    today_open = MARKET_TZ.localize(datetime(
-        now_et.year, now_et.month, now_et.day, 
-        market_open_hour, market_open_minute
-    ))
+    # Get current time in ET timezone
+    current_time_et = now_et.timetz()
     
-    today_close = MARKET_TZ.localize(datetime(
-        now_et.year, now_et.month, now_et.day, 
-        market_close_hour, market_close_minute
-    ))
+    # Check if market is open now
+    is_open = False
+    if is_weekday and not is_holiday:
+        if market_open_time <= current_time_et < market_close_time:
+            is_open = True
     
-    # Get the next market open time using pandas_market_calendars
-    # Look ahead up to 10 days to find the next trading day
-    end_date = (now_et + timedelta(days=10)).strftime('%Y-%m-%d')
+    # Calculate next market open time
+    next_open = None
+    
+    if is_weekday and not is_holiday:
+        # If today is a trading day
+        if current_time_et < market_open_time:
+            # Market opens later today
+            next_open = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
+        elif current_time_et < market_close_time:
+            # Market is open now, next open is tomorrow or next trading day
+            next_day = now_et + timedelta(days=1)
+            next_open = get_next_market_open(next_day)
+        else:
+            # Market is closed for today, find next trading day
+            next_day = now_et + timedelta(days=1)
+            next_open = get_next_market_open(next_day)
+    else:
+        # Today is not a trading day, find next trading day
+        next_day = now_et + timedelta(days=1)
+        next_open = get_next_market_open(next_day)
+    
+    return is_open, next_open
+
+def get_next_market_open(start_date: datetime) -> datetime:
+    """Find the next market open date starting from start_date."""
+    for days_ahead in range(8):  # Look ahead up to 7 days
+        check_date = start_date + timedelta(days=days_ahead)
+        check_date_str = check_date.strftime('%Y-%m-%d')
+        schedule = NYSE_CALENDAR.schedule(start_date=check_date_str, end_date=check_date_str)
+        if not schedule.empty:  # If it's a trading day
+            return MARKET_TZ.localize(datetime(
+                check_date.year, check_date.month, check_date.day,
+                9, 30  # 9:30 AM ET
+            ))
+    return start_date.replace(hour=9, minute=30, second=0, microsecond=0)
     future_schedule = NYSE_CALENDAR.schedule(start_date=today_str, end_date=end_date)
     
     if is_holiday or not is_weekday or now_et >= today_close:

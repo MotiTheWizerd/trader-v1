@@ -1,0 +1,155 @@
+[project]
+name = "trader-v1"
+version = "0.1.0"
+description = "Stock trading prediction system"
+authors = [
+    {name = "MotiTheWizerd", email = "motielmakayes@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.11,<4.0"
+license = {text = "MIT"}
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+dependencies = [
+    "rich>=14.0.0,<15.0.0",
+    "yfinance>=0.2.65,<0.3.0",
+    "pandas>=1.5.0,<2.0.0",
+    "numpy>=1.24.0,<2.0.0",
+    "pandas-market-calendars>=5.1.1,<6.0.0",
+    "finnhub-python>=2.4.24,<3.0.0",
+    "sqlalchemy[asyncio]>=2.0.41,<3.0.0",
+    "asyncpg>=0.30.0,<0.31.0",
+    "alembic>=1.16.3,<2.0.0",
+    "python-dotenv>=1.0.0,<2.0.0",
+    "fastapi>=0.116.0,<0.117.0",
+    "uvicorn[standard]>=0.34.0,<0.35.0",
+    "typer[all]>=0.16.0,<0.17.0",
+    "pydantic>=2.11.7,<3.0.0",
+    "google-adk>=1.5.0,<2.0.0",
+    "apscheduler>=3.11.0,<4.0.0",
+    "matplotlib>=3.10.3,<4.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest-asyncio>=0.23.0,<0.24.0",
+    "pytest>=8.0.0,<9.0.0",
+    "black>=24.1.1,<25.0.0",
+    "isort>=5.13.2,<6.0.0",
+    "mypy>=1.8.0,<2.0.0",
+    "flake8>=7.0.0,<8.0.0",
+]
+
+[project.scripts]
+init-db = "scripts.init_db:main"
+test-db = "scripts.test_database:main"
+
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.poetry]
+name = "trader-v1"
+version = "0.1.0"
+description = "Stock trading prediction system"
+authors = ["MotiTheWizerd <motielmakayes@gmail.com>"]
+packages = [
+    { include = "traders_agent" },
+    { include = "scripts" },
+]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+# Core dependencies
+rich = "^14.0.0"
+yfinance = "^0.2.65"
+pandas = "^1.5.0"
+numpy = "^1.24.0"
+
+# Data processing
+pandas-market-calendars = "^5.1.1"
+finnhub-python = "^2.4.24"
+
+# Database
+sqlalchemy = {extras = ["asyncio"], version = "^2.0.41"}
+asyncpg = "^0.30.0"
+alembic = "^1.16.3"
+python-dotenv = "^1.0.0"
+
+# Web & API
+fastapi = "^0.116.0"
+uvicorn = {extras = ["standard"], version = "^0.34.0"}
+httptools = "^0.6.4"
+h11 = "^0.16.0"
+
+# CLI
+typer = {extras = ["all"], version = "^0.16.0"}
+click = "^8.2.1"
+
+# Utilities
+pydantic = "^2.11.7"
+google-adk = "^1.5.0"
+apscheduler = "^3.11.0"
+matplotlib = "^3.10.3"
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+init-db = "scripts.init_db:main"
+test-db = "scripts.test_database:main"
+
+[tool.poetry.group.dev.dependencies]
+# Development tools
+"pytest-asyncio" = "^0.23.0"
+pytest = "^8.0.0"
+black = "^24.1.1"
+isort = "^5.13.2"
+mypy = "^1.8.0"
+flake8 = "^7.0.0"
+
+[tool.black]
+line-length = 120
+target-version = ['py311']
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+strict_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+show_error_context = true
+show_column_numbers = true
+pretty = true
+
+[[tool.mypy.overrides]]
+module = ["sqlalchemy.*", "alembic.*"]
+ignore_missing_imports = true
+
+[project.optional-dependencies]
+dev = [
+    "pytest-asyncio>=0.23.0,<0.24.0",
+    "pytest>=8.0.0,<9.0.0",
+    "black>=24.1.1,<25.0.0",
+    "isort>=5.13.2,<6.0.0",
+    "mypy>=1.8.0,<2.0.0",
+    "flake8>=7.0.0,<8.0.0",
+]

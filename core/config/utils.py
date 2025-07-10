@@ -114,3 +114,27 @@ def get_project_root() -> Path:
         Path to the project root
     """
     return Path(__file__).parent.parent.parent
+
+def ensure_required_directories():
+    """
+    Ensure all required directories for the application exist.
+    
+    This function creates any missing directories needed by the application.
+    """
+    from .paths import (
+        TICKERS_DIR,
+        TICKER_DATA_DIR,
+        SIGNALS_DIR,
+        LOGS_DIR
+    )
+    
+    # Ensure all directories exist
+    for directory in [TICKERS_DIR, TICKER_DATA_DIR, SIGNALS_DIR, LOGS_DIR]:
+        ensure_directory_exists(directory)
+    
+    return {
+        'tickers_dir': TICKERS_DIR,
+        'ticker_data_dir': TICKER_DATA_DIR,
+        'signals_dir': SIGNALS_DIR,
+        'logs_dir': LOGS_DIR
+    }

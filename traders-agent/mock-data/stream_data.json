@@ -1,0 +1,702 @@
+[
+    {
+      "timestamp": "2025-07-10 05:44",
+      "signal": "BUY",
+      "confidence": 0.34,
+      "price": 153.39,
+      "reason": "Price dipped below 5MA"
+    },
+    {
+      "timestamp": "2025-07-10 05:49",
+      "signal": "STAY",
+      "confidence": 0.86,
+      "price": 152.52,
+      "reason": "Price dipped below 5MA"
+    },
+    {
+      "timestamp": "2025-07-10 05:54",
+      "signal": "STAY",
+      "confidence": 0.36,
+      "price": 151.75,
+      "reason": "Low volume, no momentum"
+    },
+    {
+      "timestamp": "2025-07-10 05:59",
+      "signal": "BUY",
+      "confidence": 0.62,
+      "price": 152.7,
+      "reason": "Resistance breakout"
+    },
+    {
+      "timestamp": "2025-07-10 06:04",
+      "signal": "STAY",
+      "confidence": 0.76,
+      "price": 153.29,
+      "reason": "Stalled rally, staying neutral"
+    },
+    {
+      "timestamp": "2025-07-10 06:09",
+      "signal": "STAY",
+      "confidence": 0.83,
+      "price": 152.61,
+      "reason": "Bearish divergence"
+    },
+    {
+      "timestamp": "2025-07-10 06:14",
+      "signal": "STAY",
+      "confidence": 0.88,
+      "price": 152.62,
+      "reason": "Low volume, no momentum"
+    },
+    {
+      "timestamp": "2025-07-10 06:19",
+      "signal": "SELL",
+      "confidence": 0.95,
+      "price": 153.49,
+      "reason": "Bullish crossover"
+    },
+    {
+      "timestamp": "2025-07-10 06:24",
+      "signal": "SELL",
+      "confidence": 0.41,
+      "price": 154.29,
+      "reason": "Price dipped below 5MA"
+    },
+    {
+      "timestamp": "2025-07-10 06:29",
+      "signal": "SELL",
+      "confidence": 0.37,
+      "price": 154.86,
+      "reason": "Low volume, no momentum"
+    },
+    {
+      "timestamp": "2025-07-10 06:34",
+      "signal": "BUY",
+      "confidence": 0.96,
+      "price": 155.12,
+      "reason": "Support level bounce"
+    },
+    {
+      "timestamp": "2025-07-10 06:39",
+      "signal": "STAY",
+      "confidence": 0.37,
+      "price": 155.02,
+      "reason": "High momentum continuation"
+    },
+    {
+      "timestamp": "2025-07-10 06:44",
+      "signal": "STAY",
+      "confidence": 0.7,
+      "price": 154.47,
+      "reason": "Bullish crossover"
+    },
+    {
+      "timestamp": "2025-07-10 06:49",
+      "signal": "STAY",
+      "confidence": 0.58,
+      "price": 154.57,
+      "reason": "Price dipped below 5MA"
+    },
+    {
+      "timestamp": "2025-07-10 06:54",
+      "signal": "SELL",
+      "confidence": 0.41,
+      "price": 153.69,
+      "reason": "High momentum continuation"
+    },
+    {
+      "timestamp": "2025-07-10 06:59",
+      "signal": "SELL",
+      "confidence": 0.38,
+      "price": 154.2,
+      "reason": "Resistance breakout"
+    },
+    {
+      "timestamp": "2025-07-10 07:04",
+      "signal": "STAY",
+      "confidence": 0.88,
+      "price": 154.35,
+      "reason": "Low volume, no momentum"
+    },
+    {
+      "timestamp": "2025-07-10 07:09",
+      "signal": "BUY",
+      "confidence": 0.64,
+      "price": 155.0,
+      "reason": "High momentum continuation"
+    },
+    {
+      "timestamp": "2025-07-10 07:14",
+      "signal": "SELL",
+      "confidence": 0.81,
+      "price": 154.31,
+      "reason": "Price dipped below 5MA"
+    },
+    {
+      "timestamp": "2025-07-10 07:19",
+      "signal": "SELL",
+      "confidence": 0.49,
+      "price": 154.64,
+      "reason": "High momentum continuation"
+    },
+    {
+      "timestamp": "2025-07-10 07:24",
+      "signal": "SELL",
+      "confidence": 0.89,
+      "price": 155.81,
+      "reason": "High momentum continuation"
+    },
+    {
+      "timestamp": "2025-07-10 07:29",
+      "signal": "BUY",
+      "confidence": 0.8,
+      "price": 155.4,
+      "reason": "Support level bounce"
+    },
+    {
+      "timestamp": "2025-07-10 07:34",
+      "signal": "SELL",
+      "confidence": 0.45,
+      "price": 155.95,
+      "reason": "Support level bounce"
+    },
+    {
+      "timestamp": "2025-07-10 07:39",
+      "signal": "SELL",
+      "confidence": 0.53,
+      "price": 156.38,
+      "reason": "Bearish divergence"
+    },
+    {
+      "timestamp": "2025-07-10 07:44",
+      "signal": "SELL",
+      "confidence": 0.86,
+      "price": 156.96,
+      "reason": "Bearish divergence"
+    },
+    {
+      "timestamp": "2025-07-10 07:49",
+      "signal": "STAY",
+      "confidence": 0.45,
+      "price": 156.24,
+      "reason": "High momentum continuation"
+    },
+    {
+      "timestamp": "2025-07-10 07:54",
+      "signal": "SELL",
+      "confidence": 0.47,
+      "price": 156.18,
+      "reason": "5MA crossed above 20MA"
+    },
+    {
+      "timestamp": "2025-07-10 07:59",
+      "signal": "BUY",
+      "confidence": 0.63,
+      "price": 155.96,
+      "reason": "5MA crossed above 20MA"
+    },
+    {
+      "timestamp": "2025-07-10 08:04",
+      "signal": "STAY",
+      "confidence": 0.59,
+      "price": 156.39,
+      "reason": "High momentum continuation"
+    },
+    {
+      "timestamp": "2025-07-10 08:09",
+      "signal": "STAY",
+      "confidence": 0.81,
+      "price": 156.85,
+      "reason": "Price dipped below 5MA"
+    },
+    {
+      "timestamp": "2025-07-10 08:14",
+      "signal": "SELL",
+      "confidence": 0.5,
+      "price": 156.97,
+      "reason": "Low volume, no momentum"
+    },
+    {
+      "timestamp": "2025-07-10 08:19",
+      "signal": "STAY",
+      "confidence": 0.93,
+      "price": 157.1,
+      "reason": "Bearish divergence"
+    },
+    {
+      "timestamp": "2025-07-10 08:24",
+      "signal": "BUY",
+      "confidence": 0.94,
+      "price": 157.65,
+      "reason": "Price dipped below 5MA"
+    },
+    {
+      "timestamp": "2025-07-10 08:29",
+      "signal": "SELL",
+      "confidence": 0.46,
+      "price": 158.33,
+      "reason": "5MA crossed above 20MA"
+    },
+    {
+      "timestamp": "2025-07-10 08:34",
+      "signal": "BUY",
+      "confidence": 0.81,
+      "price": 158.91,
+      "reason": "Bearish divergence"
+    },
+    {
+      "timestamp": "2025-07-10 08:39",
+      "signal": "STAY",
+      "confidence": 0.65,
+      "price": 159.35,
+      "reason": "Price dipped below 5MA"
+    },
+    {
+      "timestamp": "2025-07-10 08:44",
+      "signal": "BUY",
+      "confidence": 0.94,
+      "price": 159.83,
+      "reason": "Support level bounce"
+    },
+    {
+      "timestamp": "2025-07-10 08:49",
+      "signal": "SELL",
+      "confidence": 0.96,
+      "price": 160.43,
+      "reason": "5MA crossed above 20MA"
+    },
+    {
+      "timestamp": "2025-07-10 08:54",
+      "signal": "BUY",
+      "confidence": 0.5,
+      "price": 159.92,
+      "reason": "Bullish crossover"
+    },
+    {
+      "timestamp": "2025-07-10 08:59",
+      "signal": "SELL",
+      "confidence": 0.53,
+      "price": 160.23,
+      "reason": "Price dipped below 5MA"
+    },
+    {
+      "timestamp": "2025-07-10 09:04",
+      "signal": "STAY",
+      "confidence": 0.78,
+      "price": 159.59,
+      "reason": "Price dipped below 5MA"
+    },
+    {
+      "timestamp": "2025-07-10 09:09",
+      "signal": "BUY",
+      "confidence": 0.36,
+      "price": 159.99,
+      "reason": "Stalled rally, staying neutral"
+    },
+    {
+      "timestamp": "2025-07-10 09:14",
+      "signal": "SELL",
+      "confidence": 0.89,
+      "price": 161.25,
+      "reason": "Bullish crossover"
+    },
+    {
+      "timestamp": "2025-07-10 09:19",
+      "signal": "BUY",
+      "confidence": 0.31,
+      "price": 161.01,
+      "reason": "Low volume, no momentum"
+    },
+    {
+      "timestamp": "2025-07-10 09:24",
+      "signal": "BUY",
+      "confidence": 0.37,
+      "price": 159.97,
+      "reason": "5MA crossed above 20MA"
+    },
+    {
+      "timestamp": "2025-07-10 09:29",
+      "signal": "SELL",
+      "confidence": 0.62,
+      "price": 159.84,
+      "reason": "Stalled rally, staying neutral"
+    },
+    {
+      "timestamp": "2025-07-10 09:34",
+      "signal": "SELL",
+      "confidence": 0.37,
+      "price": 159.84,
+      "reason": "Low volume, no momentum"
+    },
+    {
+      "timestamp": "2025-07-10 09:39",
+      "signal": "STAY",
+      "confidence": 0.75,
+      "price": 160.13,
+      "reason": "5MA crossed above 20MA"
+    },
+    {
+      "timestamp": "2025-07-10 09:44",
+      "signal": "SELL",
+      "confidence": 0.81,
+      "price": 159.98,
+      "reason": "High momentum continuation"
+    },
+    {
+      "timestamp": "2025-07-10 09:49",
+      "signal": "BUY",
+      "confidence": 0.37,
+      "price": 158.64,
+      "reason": "Stalled rally, staying neutral"
+    },
+    {
+      "timestamp": "2025-07-10 09:54",
+      "signal": "SELL",
+      "confidence": 0.36,
+      "price": 158.67,
+      "reason": "Low volume, no momentum"
+    },
+    {
+      "timestamp": "2025-07-10 09:59",
+      "signal": "SELL",
+      "confidence": 0.87,
+      "price": 159.62,
+      "reason": "Stalled rally, staying neutral"
+    },
+    {
+      "timestamp": "2025-07-10 10:04",
+      "signal": "STAY",
+      "confidence": 0.59,
+      "price": 159.4,
+      "reason": "Bullish crossover"
+    },
+    {
+      "timestamp": "2025-07-10 10:09",
+      "signal": "STAY",
+      "confidence": 0.74,
+      "price": 159.8,
+      "reason": "Low volume, no momentum"
+    },
+    {
+      "timestamp": "2025-07-10 10:14",
+      "signal": "SELL",
+      "confidence": 0.45,
+      "price": 160.41,
+      "reason": "Low volume, no momentum"
+    },
+    {
+      "timestamp": "2025-07-10 10:19",
+      "signal": "STAY",
+      "confidence": 0.88,
+      "price": 161.52,
+      "reason": "Bearish divergence"
+    },
+    {
+      "timestamp": "2025-07-10 10:24",
+      "signal": "STAY",
+      "confidence": 0.31,
+      "price": 160.64,
+      "reason": "Stalled rally, staying neutral"
+    },
+    {
+      "timestamp": "2025-07-10 10:29",
+      "signal": "SELL",
+      "confidence": 0.99,
+      "price": 159.25,
+      "reason": "5MA crossed above 20MA"
+    },
+    {
+      "timestamp": "2025-07-10 10:34",
+      "signal": "SELL",
+      "confidence": 0.82,
+      "price": 159.81,
+      "reason": "Support level bounce"
+    },
+    {
+      "timestamp": "2025-07-10 10:39",
+      "signal": "STAY",
+      "confidence": 0.72,
+      "price": 158.92,
+      "reason": "Resistance breakout"
+    },
+    {
+      "timestamp": "2025-07-10 10:44",
+      "signal": "BUY",
+      "confidence": 0.98,
+      "price": 159.84,
+      "reason": "Resistance breakout"
+    },
+    {
+      "timestamp": "2025-07-10 10:49",
+      "signal": "SELL",
+      "confidence": 0.85,
+      "price": 160.86,
+      "reason": "Stalled rally, staying neutral"
+    },
+    {
+      "timestamp": "2025-07-10 10:54",
+      "signal": "BUY",
+      "confidence": 0.62,
+      "price": 161.05,
+      "reason": "Support level bounce"
+    },
+    {
+      "timestamp": "2025-07-10 10:59",
+      "signal": "SELL",
+      "confidence": 0.72,
+      "price": 161.31,
+      "reason": "Bearish divergence"
+    },
+    {
+      "timestamp": "2025-07-10 11:04",
+      "signal": "SELL",
+      "confidence": 0.63,
+      "price": 161.69,
+      "reason": "5MA crossed above 20MA"
+    },
+    {
+      "timestamp": "2025-07-10 11:09",
+      "signal": "BUY",
+      "confidence": 0.74,
+      "price": 161.53,
+      "reason": "Bullish crossover"
+    },
+    {
+      "timestamp": "2025-07-10 11:14",
+      "signal": "STAY",
+      "confidence": 0.93,
+      "price": 160.3,
+      "reason": "Low volume, no momentum"
+    },
+    {
+      "timestamp": "2025-07-10 11:19",
+      "signal": "SELL",
+      "confidence": 0.92,
+      "price": 160.56,
+      "reason": "Stalled rally, staying neutral"
+    },
+    {
+      "timestamp": "2025-07-10 11:24",
+      "signal": "SELL",
+      "confidence": 0.8,
+      "price": 161.31,
+      "reason": "Price dipped below 5MA"
+    },
+    {
+      "timestamp": "2025-07-10 11:29",
+      "signal": "STAY",
+      "confidence": 0.74,
+      "price": 161.92,
+      "reason": "Resistance breakout"
+    },
+    {
+      "timestamp": "2025-07-10 11:34",
+      "signal": "STAY",
+      "confidence": 0.35,
+      "price": 162.06,
+      "reason": "Support level bounce"
+    },
+    {
+      "timestamp": "2025-07-10 11:39",
+      "signal": "STAY",
+      "confidence": 0.33,
+      "price": 163.65,
+      "reason": "Stalled rally, staying neutral"
+    },
+    {
+      "timestamp": "2025-07-10 11:44",
+      "signal": "BUY",
+      "confidence": 0.55,
+      "price": 164.4,
+      "reason": "Price dipped below 5MA"
+    },
+    {
+      "timestamp": "2025-07-10 11:49",
+      "signal": "BUY",
+      "confidence": 0.73,
+      "price": 163.29,
+      "reason": "Bullish crossover"
+    },
+    {
+      "timestamp": "2025-07-10 11:54",
+      "signal": "SELL",
+      "confidence": 0.96,
+      "price": 162.35,
+      "reason": "Bearish divergence"
+    },
+    {
+      "timestamp": "2025-07-10 11:59",
+      "signal": "STAY",
+      "confidence": 0.94,
+      "price": 162.8,
+      "reason": "Low volume, no momentum"
+    },
+    {
+      "timestamp": "2025-07-10 12:04",
+      "signal": "STAY",
+      "confidence": 0.53,
+      "price": 163.49,
+      "reason": "Price dipped below 5MA"
+    },
+    {
+      "timestamp": "2025-07-10 12:09",
+      "signal": "BUY",
+      "confidence": 0.79,
+      "price": 164.17,
+      "reason": "Stalled rally, staying neutral"
+    },
+    {
+      "timestamp": "2025-07-10 12:14",
+      "signal": "STAY",
+      "confidence": 0.42,
+      "price": 164.19,
+      "reason": "5MA crossed above 20MA"
+    },
+    {
+      "timestamp": "2025-07-10 12:19",
+      "signal": "SELL",
+      "confidence": 0.85,
+      "price": 164.93,
+      "reason": "Bearish divergence"
+    },
+    {
+      "timestamp": "2025-07-10 12:24",
+      "signal": "BUY",
+      "confidence": 0.96,
+      "price": 165.31,
+      "reason": "High momentum continuation"
+    },
+    {
+      "timestamp": "2025-07-10 12:29",
+      "signal": "STAY",
+      "confidence": 0.59,
+      "price": 165.06,
+      "reason": "Low volume, no momentum"
+    },
+    {
+      "timestamp": "2025-07-10 12:34",
+      "signal": "STAY",
+      "confidence": 0.57,
+      "price": 163.98,
+      "reason": "Bullish crossover"
+    },
+    {
+      "timestamp": "2025-07-10 12:39",
+      "signal": "SELL",
+      "confidence": 0.47,
+      "price": 165.64,
+      "reason": "Low volume, no momentum"
+    },
+    {
+      "timestamp": "2025-07-10 12:44",
+      "signal": "STAY",
+      "confidence": 0.72,
+      "price": 165.03,
+      "reason": "5MA crossed above 20MA"
+    },
+    {
+      "timestamp": "2025-07-10 12:49",
+      "signal": "BUY",
+      "confidence": 0.46,
+      "price": 164.75,
+      "reason": "High momentum continuation"
+    },
+    {
+      "timestamp": "2025-07-10 12:54",
+      "signal": "BUY",
+      "confidence": 0.55,
+      "price": 165.74,
+      "reason": "Low volume, no momentum"
+    },
+    {
+      "timestamp": "2025-07-10 12:59",
+      "signal": "SELL",
+      "confidence": 0.84,
+      "price": 166.54,
+      "reason": "5MA crossed above 20MA"
+    },
+    {
+      "timestamp": "2025-07-10 13:04",
+      "signal": "SELL",
+      "confidence": 0.8,
+      "price": 166.71,
+      "reason": "High momentum continuation"
+    },
+    {
+      "timestamp": "2025-07-10 13:09",
+      "signal": "BUY",
+      "confidence": 0.44,
+      "price": 167.97,
+      "reason": "Resistance breakout"
+    },
+    {
+      "timestamp": "2025-07-10 13:14",
+      "signal": "STAY",
+      "confidence": 0.51,
+      "price": 168.51,
+      "reason": "High momentum continuation"
+    },
+    {
+      "timestamp": "2025-07-10 13:19",
+      "signal": "SELL",
+      "confidence": 0.82,
+      "price": 169.87,
+      "reason": "Bearish divergence"
+    },
+    {
+      "timestamp": "2025-07-10 13:24",
+      "signal": "BUY",
+      "confidence": 0.89,
+      "price": 170.04,
+      "reason": "Bearish divergence"
+    },
+    {
+      "timestamp": "2025-07-10 13:29",
+      "signal": "STAY",
+      "confidence": 0.67,
+      "price": 169.85,
+      "reason": "Price dipped below 5MA"
+    },
+    {
+      "timestamp": "2025-07-10 13:34",
+      "signal": "SELL",
+      "confidence": 0.51,
+      "price": 170.54,
+      "reason": "Bearish divergence"
+    },
+    {
+      "timestamp": "2025-07-10 13:39",
+      "signal": "BUY",
+      "confidence": 0.78,
+      "price": 170.77,
+      "reason": "Support level bounce"
+    },
+    {
+      "timestamp": "2025-07-10 13:44",
+      "signal": "STAY",
+      "confidence": 0.95,
+      "price": 170.17,
+      "reason": "Resistance breakout"
+    },
+    {
+      "timestamp": "2025-07-10 13:49",
+      "signal": "BUY",
+      "confidence": 0.78,
+      "price": 170.14,
+      "reason": "Bullish crossover"
+    },
+    {
+      "timestamp": "2025-07-10 13:54",
+      "signal": "BUY",
+      "confidence": 0.41,
+      "price": 169.96,
+      "reason": "5MA crossed above 20MA"
+    },
+    {
+      "timestamp": "2025-07-10 13:59",
+      "signal": "SELL",
+      "confidence": 0.37,
+      "price": 171.09,
+      "reason": "Bearish divergence"
+    }
+  ]
