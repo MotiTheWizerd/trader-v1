@@ -15,7 +15,7 @@ project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from scripts.scheduler import run_scheduler
+from core.scheduler.scheduler import run_scheduler
 
 # Initialize rich console
 console = Console()
@@ -35,7 +35,7 @@ def main():
     args = parser.parse_args()
     
     if args.test_run:
-        from scripts.scheduler import scheduled_job
+        from core.scheduler.scheduler import scheduler_job as scheduled_job
         console.print("[bold blue]Running a single test job without starting the scheduler...[/bold blue]")
         scheduled_job()
         console.print("[bold green]Test job completed. Exiting.[/bold green]")

@@ -20,7 +20,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 # Import scheduler components
-from scripts.scheduler import scheduler_job, is_market_open, ensure_directories
+from core.scheduler.scheduler import scheduler_job, is_market_open, ensure_directories
 from ui.scheduler_display import display
 
 
